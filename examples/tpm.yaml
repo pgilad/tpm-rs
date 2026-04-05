@@ -1,0 +1,13 @@
+# Converted from ~/.config/tmux/tmux.conf.
+# The legacy `pgilad/tpm` manager entry is omitted; replace its tmux bootstrap with `run-shell "tpm load"`.
+version: 1
+plugins:
+  - source: pgilad/tmux-sensible
+  - source: pgilad/tmux-resurrect
+  - source: pgilad/tmux-continuum
+  - source: pgilad/tmux-fzf
+  - source: tmux-plugins/tmux-yank
+  - source: fcsonline/tmux-thumbs
+  - source: omerxx/tmux-sessionx
+  - source: catppuccin/tmux
+    ref: v2.1.3

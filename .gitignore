@@ -1,0 +1,10 @@
+/target
+/.idea
+/.vscode
+/.zed
+/.DS_Store
+/.direnv
+/.env
+/.env.*
+/.mise.local.toml
+/*.log

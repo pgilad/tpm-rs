@@ -1,0 +1,22 @@
+[env]
+CARGO_TERM_COLOR = "always"
+
+[tasks.fmt]
+description = "Format the codebase"
+run = "cargo fmt --all"
+
+[tasks.lint]
+description = "Run clippy with warnings denied"
+run = "cargo clippy --all-targets --all-features -- -D warnings"
+
+[tasks.test]
+description = "Run the test suite"
+run = "cargo test --all-targets"
+
+[tasks.build]
+description = "Build the project for the current host target"
+run = "cargo build"
+
+[tasks.check]
+description = "Run formatting, linting, and tests"
+depends = ["fmt", "lint", "test"]

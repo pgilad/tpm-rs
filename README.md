@@ -1,0 +1,320 @@
+# tpm
+
+<p align="center"><strong>Declarative tmux plugin management with an XDG-first layout and explicit CLI workflows.</strong></p>
+
+<p align="center"><code>tpm-rs</code> keeps the public command as <code>tpm</code>.</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT" /></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-1.94.1-orange.svg" alt="Rust 1.94.1" /></a>
+  <a href="https://github.com/tmux/tmux"><img src="https://img.shields.io/badge/tmux-3.2%2B-1BB91F.svg" alt="tmux 3.2+" /></a>
+  <img src="https://img.shields.io/badge/layout-XDG--first-0A7EA4.svg" alt="XDG-first layout" />
+</p>
+
+Minimal Rust replacement for shell TPM.
+
+`tpm` keeps compatibility with existing tmux plugin repositories by cloning them as Git checkouts and running executable root `*.tmux` entrypoints during `tpm load`, while moving plugin state into a declarative `tpm.yaml`. Plugin loading is serial: enabled plugins run in `tpm.yaml` order, and each plugin's root `*.tmux` entrypoints run serially in sorted filename order.
+
+## Already Using TPM?
+
+If you already use the original shell TPM, start here:
+
+```bash
+tpm migrate
+```
+
+Then replace the legacy TPM bootstrap at the end of `tmux.conf`:
+
+```tmux
+run '~/.tmux/plugins/tpm/tpm'
+```
+
+with:
+
+```tmux
+run-shell "tpm load"
+```
+
+and install the migrated plugin set:
+
+```bash
+tpm install
+```
+
+`tpm migrate` keeps plugin order, skips `tmux-plugins/tpm`, writes a new `tpm.yaml`, and leaves `tmux.conf` unchanged so you can review it first. Multi-file tmux configs are not merged automatically; skipped `source-file` directives are reported with line and path detail. Full migration details live in [docs/migration.md](./docs/migration.md).
+
+## Why use tpm
+
+- Declarative plugin management: `tpm.yaml` is the source of truth instead of a long list of `set -g @plugin` lines in `tmux.conf`.
+- Safer tmux startup: `tpm load` is offline-only and never installs or updates plugins during startup.
+- XDG-first filesystem layout: config, data, state, and cache all resolve through XDG locations by default.
+- Automation-friendly output: `paths`, `list`, and `doctor` support `--json`, and `install` and `update` keep stable line-oriented stdout.
+- Compatible plugin model: existing tmux plugin repos still work as Git checkouts with executable root `*.tmux` entrypoints.
+- Better failure reporting: per-plugin failures are aggregated and surfaced clearly in stderr and tmux messages.
+
+## Original TPM vs. `tpm-rs`
+
+Existing tmux plugin repositories still work in both tools. The main differences are in how the plugin manager itself is configured, invoked, and laid out on disk.
+
+| Area | Original shell TPM | `tpm-rs` |
+|---|---|---|
+| Manager install | Clone `tmux-plugins/tpm` into `~/.tmux/plugins/tpm` and bootstrap it from `tmux.conf`. | Install a standalone `tpm` binary and call `run-shell "tpm load"` from `tmux.conf`. |
+| Plugin source of truth | Declare plugins inline in `tmux.conf` with `set -g @plugin '...'`. | Declare plugins in `tpm.yaml`; `tmux.conf` only loads them. |
+| Usage model | Manage plugins through TPM shell scripts and tmux-driven workflows. | Manage plugins through native CLI subcommands such as `install`, `update`, `cleanup`, `add`, and `remove`. |
+| Key bindings | Ships built-in `prefix + I`, `prefix + U`, and `prefix + alt + u` flows. | Ships no built-in key bindings; run the CLI directly or bind tmux keys to the CLI yourself. |
+| Startup behavior | Startup is tied to sourcing the TPM checkout from `tmux.conf`, and install/update flows are tmux-driven. | `tpm load` is offline-only and only loads already-installed plugins during tmux startup. |
+| Plugin source syntax | Commonly uses inline plugin strings such as `owner/repo`, `owner/repo#branch`, or Git SSH URLs. | Accepts `owner/repo`, full Git URLs, SSH Git URLs, and local paths, with structured `branch` or `ref` fields in YAML. |
+| Owner/repo variance on disk | Plugins live under one plugin root alongside the TPM checkout. | Git-hosted plugins keep their full namespace on disk, for example `${plugins_dir}/tmux-plugins/tmux-sensible`, and duplicate install paths are rejected. |
+| Filesystem layout | Defaults to the manager-centric `~/.tmux/plugins` tree. | Uses XDG-resolved config, data, state, and cache directories by default, with `paths.plugins` or `--plugins-dir` overrides. |
+| Output and automation | Primarily interactive tmux messages and shell-script behavior. | Adds stable line-oriented stdout, `--json` for `paths`/`list`/`doctor`, per-server load logs, and clearer aggregated failures. |
+| Command surface | Focused on tmux-integrated install, update, clean, and load flows. | Adds `paths`, `list`, `doctor`, `self-update`, and config-aware `add`/`remove`. |
+
+## Quick Start
+
+If you are migrating from the original shell TPM, prefer the migration flow above. The steps below are the clean-slate path.
+
+### 1. Install `tpm`
+
+Recommended install:
+
+```bash
+curl -fsSL https://github.com/pgilad/tpm-rs/releases/latest/download/install.sh | sh
+```
+
+The install script downloads the correct release archive for your platform, installs `tpm` into `~/.local/bin`, marks it executable, and tells you if `~/.local/bin` is not on your `PATH`.
+
+Downloading `install.sh` from a specific release tag keeps that tag pinned by default. `TPM_INSTALL_VERSION` and `--version` still override it for manual installs.
+
+GitHub releases publish `.tar.gz` archives for `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, and `aarch64-apple-darwin`. On Apple Silicon, the installer prefers the native `arm64` archive even when the shell is running under Rosetta. musl-based Linux distributions such as Alpine are not covered by the published release assets; install from source there instead. Each archive contains `tpm`, `README.md`, `CHANGELOG.md`, and `LICENSE`.
+
+You can also install from source:
+
+```bash
+cargo install --git https://github.com/pgilad/tpm-rs --bin tpm
+```
+
+Or build locally:
+
+```bash
+cargo build --release
+```
+
+Runtime requirements:
+
+- `git` 2.25.0 or newer
+- `tmux` 3.2 or newer
+
+`tpm doctor` verifies both.
+
+### 2. Create `tpm.yaml`
+
+Create `${XDG_CONFIG_HOME:-$HOME/.config}/tpm/tpm.yaml`:
+
+```yaml
+version: 1
+plugins:
+  - source: tmux-plugins/tmux-sensible
+  - source: tmux-plugins/tmux-resurrect
+```
+
+Or let `tpm` create it and install plugins for you:
+
+```bash
+tpm add tmux-plugins/tmux-sensible
+tpm add tmux-plugins/tmux-resurrect
+tpm add catppuccin/tmux --ref v2.1.3 --skip-install
+```
+
+### 3. Load plugins from `tmux.conf`
+
+Add this line at the end of `tmux.conf`:
+
+```tmux
+run-shell "tpm load"
+```
+
+### 4. Install and inspect plugins
+
+```bash
+tpm install
+tpm list
+tpm paths
+tpm doctor
+```
+
+Common follow-up workflows:
+
+```bash
+tpm add tmux-plugins/tmux-yank
+tpm update
+tpm self-update
+tpm remove tmux-plugins/tmux-yank
+tpm cleanup
+```
+
+Optional tmux key bindings for a TPM-like workflow:
+
+```tmux
+bind I run-shell "tpm install"
+bind U run-shell "tpm update"
+bind M-u run-shell "tpm cleanup"
+```
+
+## Commands
+
+| Command | Purpose |
+|---|---|
+| `load` | Run enabled installed plugin entrypoints inside tmux |
+| `install` | Install configured plugins from `tpm.yaml` |
+| `update [plugin...]` | Update installed plugins |
+| `self-update` | Update the installed `tpm` binary from the latest release |
+| `cleanup` | Remove undeclared plugin directories |
+| `list [--json]` | List configured plugins and installation state |
+| `doctor [--json]` | Validate config, tool availability, and resolved paths |
+| `add SOURCE [--branch BRANCH] [--ref REF] [--skip-install]` | Add a plugin to `tpm.yaml`, creating it if needed, and install it by default |
+| `migrate [--tmux-conf PATH]` | Create `tpm.yaml` from an existing tmux config without modifying `tmux.conf` |
+| `remove NAME` | Remove a plugin from `tpm.yaml` |
+| `paths [--json]` | Print resolved config, data, state, cache, and plugins paths |
+
+Global flags:
+
+- `--config PATH` overrides the config file path.
+- `--plugins-dir PATH` overrides the resolved plugin checkout directory.
+
+## Configuration
+
+Configuration is YAML only. If `--config`, `TPM_CONFIG_FILE`, and `TPM_CONFIG_DIR` are all omitted, `tpm` reads `$XDG_CONFIG_HOME/tpm/tpm.yaml`, or `~/.config/tpm/tpm.yaml` when `XDG_CONFIG_HOME` is unset.
+
+Start from this shape:
+
+```yaml
+version: 1
+paths:
+  # Optional: overrides the default plugins directory.
+  plugins: ~/.local/share/tpm/plugins
+plugins:
+  - source: tmux-plugins/tmux-sensible
+  - source: tmux-plugins/tmux-resurrect
+    branch: stable
+  - source: tmux-plugins/tmux-yank
+  - source: catppuccin/tmux
+    ref: v2.1.3
+  - source: ../local-plugin
+    enabled: false
+```
+
+Branch and ref behavior:
+
+- Omitting both `branch` and `ref` tracks the remote default branch.
+- `branch` tracks a named remote branch and fast-forwards it on `tpm update`.
+- `ref` pins a tag or commit SHA and keeps the checkout fixed to that exact object.
+- `branch` and `ref` are mutually exclusive.
+
+Accepted `source` formats:
+
+- `owner/repo` GitHub shorthand
+- full Git URL
+- SSH Git URL
+- absolute local path
+- relative local path
+
+For local paths that could be mistaken for `owner/repo`, use `./` or `../` so they stay unambiguous.
+
+`tmux-plugins/tpm` is intentionally rejected in `tpm.yaml`; use the `tpm` CLI and
+`run-shell "tpm load"` instead of managing the legacy shell TPM plugin.
+
+Path behavior:
+
+- `paths.plugins` can override the plugin checkout root.
+- Relative `paths.plugins` values are resolved relative to the directory that contains `tpm.yaml`.
+- Relative local plugin sources in `tpm.yaml` are resolved relative to the directory that contains `tpm.yaml`.
+- Git-hosted plugin sources keep their namespace in the checkout path, so `tmux-plugins/tmux-sensible` installs into `${plugins_dir}/tmux-plugins/tmux-sensible`.
+
+Default resolved locations:
+
+- Config file: `$XDG_CONFIG_HOME/tpm/tpm.yaml`
+- Data dir: `$XDG_DATA_HOME/tpm`
+- State dir: `$XDG_STATE_HOME/tpm`
+- Cache dir: `$XDG_CACHE_HOME/tpm`
+- Plugins dir: `$XDG_DATA_HOME/tpm/plugins`
+
+If XDG variables are unset, the usual `~/.config`, `~/.local/share`, `~/.local/state`, and `~/.cache` fallbacks apply.
+
+Additional environment overrides:
+
+- `TPM_CONFIG_FILE`
+- `TPM_CONFIG_DIR`
+- `TPM_DATA_DIR`
+- `TPM_STATE_DIR`
+- `TPM_CACHE_DIR`
+- `TPM_PLUGINS_DIR`
+
+Config rewrites are deterministic, but commands that rewrite `tpm.yaml` do not preserve YAML comments or original formatting.
+
+## Automation-Friendly Output
+
+- `tpm paths --json`, `tpm list --json`, and `tpm doctor --json` emit pretty-printed JSON.
+- `tpm install` and `tpm update` emit stable line-oriented stdout that is suitable for scripts.
+- `tpm add` emits the normal `add` line followed by the `install` line for the added plugin.
+- `tpm add --skip-install` only rewrites `tpm.yaml`.
+- `tpm self-update` emits stable line-oriented stdout for update and no-op outcomes.
+- `tpm load` stays silent on success.
+- When `tpm load` runs inside tmux, it overwrites a per-server log file at `${XDG_STATE_HOME:-$HOME/.local/state}/tpm/load-<sha256(socket-path)>.log` with plugin discovery, load events, and timing.
+- `tpm install`, `tpm update`, and `tpm load` continue processing later selected plugins after an individual plugin failure, then exit with code `1` after printing a final summary line.
+
+Typical `install` and `update` output:
+
+```text
+Installed tmux-plugins/tmux-sensible into /path/to/plugins/tmux-plugins/tmux-sensible
+Skipped already installed tmux-plugins/tmux-sensible at /path/to/plugins/tmux-plugins/tmux-sensible
+Updated tmux-plugins/tmux-sensible in /path/to/plugins/tmux-plugins/tmux-sensible
+Already up to date tmux-plugins/tmux-sensible at /path/to/plugins/tmux-plugins/tmux-sensible
+Kept pinned tmux-continuum at ref v1.0.0 in /path/to/plugins/tmux-continuum
+Realigned pinned tmux-continuum to ref v1.0.0 in /path/to/plugins/tmux-continuum
+Updated tpm from 2026.04.03-12 to 2026.04.04-1 at /path/to/tpm
+Already up to date tpm 2026.04.04-1 at /path/to/tpm
+```
+
+Typical `load` failure output:
+
+```text
+Failed to load tmux-plugins/tmux-sensible: plugin checkout is missing at /path/to/plugins/tmux-plugins/tmux-sensible
+Failed to load tmux-fail: entrypoint /path/to/plugins/tmux-fail/fail.tmux exited with status 7: boom
+error: load reported 2 failed operations
+```
+
+When `tpm load` runs inside tmux, failures are also mirrored through `display-message`. A single failure includes the detail directly; multiple failures collapse to a count and point back to stderr.
+
+## Migration
+
+Migration guidance from shell TPM lives in [docs/migration.md](./docs/migration.md).
+
+Short version:
+
+1. Install `tpm`, preferably with the install script.
+2. Create `tpm.yaml`.
+3. Replace the old TPM bootstrap with `run-shell "tpm load"`.
+4. Run `tpm install`.
+
+## Development
+
+This repository pins Rust in [`rust-toolchain.toml`](./rust-toolchain.toml) and uses [mise](https://mise.jdx.dev/) as a task runner.
+
+```bash
+# install rustup first if you do not already have it
+mise run check
+```
+
+CI-parity Cargo commands:
+
+```bash
+cargo fmt --all
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-targets
+```
+
+The long-form implementation record and milestone tracking live in [PLAN.md](./PLAN.md).
+
+## License
+
+MIT. See [LICENSE](./LICENSE).

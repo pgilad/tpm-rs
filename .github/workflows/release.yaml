@@ -1,0 +1,250 @@
+name: release
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 8 * * *'
+      timezone: 'Asia/Jerusalem'
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    outputs:
+      latest_tag: ${{ steps.candidate.outputs.latest_tag }}
+      release_sha: ${{ steps.candidate.outputs.release_sha }}
+      should_release: ${{ steps.candidate.outputs.should_release }}
+    steps:
+      - name: Ensure manual releases are dispatched from main
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        run: |
+          echo "error: releases can only be dispatched from refs/heads/main" >&2
+          exit 1
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Resolve release candidate
+        id: candidate
+        run: |
+          release_sha="$(git rev-parse HEAD)"
+          latest_tag="$(git tag --list '[0-9]*' --sort=-v:refname | sed -n '1p')"
+          should_release=true
+
+          if [[ -n "${latest_tag}" ]]; then
+            tagged_sha="$(git rev-list -n 1 "${latest_tag}")"
+            if [[ "${tagged_sha}" == "${release_sha}" ]]; then
+              should_release=false
+            fi
+          fi
+
+          {
+            printf 'latest_tag=%s\n' "${latest_tag}"
+            printf 'release_sha=%s\n' "${release_sha}"
+            printf 'should_release=%s\n' "${should_release}"
+          } >> "${GITHUB_OUTPUT}"
+      - name: Skip when main has no unreleased commits
+        if: steps.candidate.outputs.should_release != 'true'
+        run: echo "No unreleased commits on main since ${{ steps.candidate.outputs.latest_tag }}."
+
+  fmt:
+    if: needs.preflight.outputs.should_release == 'true'
+    needs:
+      - preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.release_sha }}
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+      - name: cargo fmt
+        run: cargo fmt --all --check
+
+  lint:
+    if: needs.preflight.outputs.should_release == 'true'
+    needs:
+      - preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.release_sha }}
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+      - name: cargo clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    if: needs.preflight.outputs.should_release == 'true'
+    needs:
+      - preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.release_sha }}
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+      - name: cargo test
+        run: cargo test --all-targets
+
+  prepare_release:
+    if: needs.preflight.outputs.should_release == 'true'
+    needs:
+      - preflight
+      - fmt
+      - lint
+      - test
+    runs-on: ubuntu-24.04
+    outputs:
+      release_version: ${{ steps.release.outputs.release_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.release_sha }}
+          fetch-depth: 0
+      - name: Prepare release
+        id: release
+        run: ./scripts/prepare-release.sh "${{ github.run_number }}"
+      - name: Render release installer
+        run: ./scripts/render-installer.sh "${{ steps.release.outputs.release_version }}" target/release/metadata/install.sh
+      - name: Stage release metadata
+        run: |
+          cp CHANGELOG.md target/release/metadata/CHANGELOG.md
+          cp "${{ steps.release.outputs.release_notes_path }}" target/release/metadata/release-notes.md
+      - name: Upload release metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-metadata
+          path: target/release/metadata/*
+          if-no-files-found: error
+
+  build_release:
+    if: needs.preflight.outputs.should_release == 'true'
+    needs:
+      - preflight
+      - prepare_release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.release_sha }}
+      - name: Download prepared metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: release-metadata
+          path: target/release/metadata
+      - name: Restore prepared changelog
+        run: cp target/release/metadata/CHANGELOG.md CHANGELOG.md
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+          target: ${{ matrix.target }}
+      - name: Package release archive
+        run: ./scripts/package-release.sh "${{ needs.prepare_release.outputs.release_version }}" target/release/dist --target "${{ matrix.target }}"
+      - name: Upload packaged artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dist-${{ matrix.target }}
+          path: target/release/dist/*
+          if-no-files-found: error
+
+  publish_release:
+    if: needs.preflight.outputs.should_release == 'true'
+    needs:
+      - preflight
+      - prepare_release
+      - build_release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.release_sha }}
+          fetch-depth: 0
+      - name: Ensure main has not advanced
+        run: |
+          git fetch origin main --tags
+          current_main="$(git rev-parse origin/main)"
+          release_sha="${{ needs.preflight.outputs.release_sha }}"
+
+          if [[ "${current_main}" != "${release_sha}" ]]; then
+            echo "error: main advanced to ${current_main} after this release started; rerun the workflow to release the latest tip" >&2
+            exit 1
+          fi
+      - name: Download release metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: release-metadata
+          path: target/release/metadata
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-dist-*
+          path: target/release/dist
+          merge-multiple: true
+      - name: Restore release metadata
+        run: |
+          cp target/release/metadata/CHANGELOG.md CHANGELOG.md
+          cp target/release/metadata/release-notes.md target/release/release-notes.md
+      - name: Write checksum manifest
+        run: |
+          version="${{ needs.prepare_release.outputs.release_version }}"
+          checksum_manifest="target/release/tpm-${version}-checksums.txt"
+          : > "${checksum_manifest}"
+          find target/release/dist -type f -name '*.sha256' | sort | while IFS= read -r checksum_path; do
+            checksum="$(cat "${checksum_path}")"
+            archive_name="$(basename "${checksum_path%.sha256}")"
+            printf '%s  %s\n' "${checksum}" "${archive_name}" >> "${checksum_manifest}"
+          done
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Commit changelog and tag release
+        run: |
+          git add CHANGELOG.md
+          if git diff --cached --quiet; then
+            echo "error: prepare-release did not update CHANGELOG.md" >&2
+            exit 1
+          fi
+          git commit -m "chore(release): ${{ needs.prepare_release.outputs.release_version }}"
+          git tag "${{ needs.prepare_release.outputs.release_version }}"
+          git push origin HEAD:main --follow-tags
+      - name: Publish GitHub release
+        run: |
+          version="${{ needs.prepare_release.outputs.release_version }}"
+          assets=(target/release/dist/* "target/release/tpm-${version}-checksums.txt" target/release/metadata/install.sh)
+          gh release create "${version}" \
+            --verify-tag \
+            --title "${version}" \
+            --notes-file target/release/release-notes.md \
+            "${assets[@]}"
