@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.04.09-4
+
+- init (914cbdf)
+- Update actions/checkout v4 -> v6 (572afea)
+- Fix release workflow tag publishing (c0b1f7a)
+
 ## 2026.04.08-3
 
 - init (914cbdf)
