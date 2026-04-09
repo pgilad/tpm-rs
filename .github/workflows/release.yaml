@@ -23,7 +23,7 @@ jobs:
         run: |
           echo "error: releases can only be dispatched from refs/heads/main" >&2
           exit 1
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: main
           fetch-depth: 0
@@ -56,7 +56,7 @@ jobs:
       - preflight
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.preflight.outputs.release_sha }}
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -71,7 +71,7 @@ jobs:
       - preflight
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.preflight.outputs.release_sha }}
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -92,7 +92,7 @@ jobs:
           - macos-latest
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.preflight.outputs.release_sha }}
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -112,7 +112,7 @@ jobs:
     outputs:
       release_version: ${{ steps.release.outputs.release_version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.preflight.outputs.release_sha }}
           fetch-depth: 0
@@ -151,7 +151,7 @@ jobs:
             target: aarch64-apple-darwin
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.preflight.outputs.release_sha }}
       - name: Download prepared metadata
@@ -186,7 +186,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.preflight.outputs.release_sha }}
           fetch-depth: 0
@@ -229,16 +229,17 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      - name: Commit changelog and tag release
+      - name: Commit changelog and push release refs
         run: |
+          version="${{ needs.prepare_release.outputs.release_version }}"
           git add CHANGELOG.md
           if git diff --cached --quiet; then
             echo "error: prepare-release did not update CHANGELOG.md" >&2
             exit 1
           fi
-          git commit -m "chore(release): ${{ needs.prepare_release.outputs.release_version }}"
-          git tag "${{ needs.prepare_release.outputs.release_version }}"
-          git push origin HEAD:main --follow-tags
+          git commit -m "chore(release): ${version}"
+          git tag -a "${version}" -m "${version}"
+          git push --atomic origin HEAD:main "refs/tags/${version}"
       - name: Publish GitHub release
         run: |
           version="${{ needs.prepare_release.outputs.release_version }}"
