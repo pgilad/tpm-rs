@@ -1,6 +1,6 @@
 # tpm
 
-<p align="center"><strong>Declarative tmux plugin management with an XDG-first layout and explicit CLI workflows.</strong></p>
+<p align="center"><strong>A small tmux plugin manager with explicit installs, predictable startup, and an XDG-first layout.</strong></p>
 
 <p align="center"><code>tpm-rs</code> keeps the public command as <code>tpm</code>.</p>
 
@@ -11,37 +11,13 @@
   <img src="https://img.shields.io/badge/layout-XDG--first-0A7EA4.svg" alt="XDG-first layout" />
 </p>
 
-Minimal Rust replacement for shell TPM.
+`tpm` is a tmux plugin manager for people who want to try plugins without turning tmux startup into an installer.
 
-`tpm` keeps compatibility with existing tmux plugin repositories by cloning them as Git checkouts and running executable root `*.tmux` entrypoints during `tpm load`, while moving plugin state into a declarative `tpm.yaml`. Plugin loading is serial: enabled plugins run in `tpm.yaml` order, and each plugin's root `*.tmux` entrypoints run serially in sorted filename order.
+TPM usually refers to the original shell-based tmux plugin manager. This project is a Rust replacement that keeps the public command as `tpm`, but moves plugin state into a declarative `tpm.yaml`.
 
-## Already Using TPM?
+It works with existing tmux plugin repositories: plugins are cloned as Git checkouts, and `tpm load` runs their executable root `*.tmux` entrypoints. Loading is predictable: enabled plugins run in `tpm.yaml` order, and each plugin's root entrypoints run in sorted filename order.
 
-If you already use the original shell TPM, start here:
-
-```bash
-tpm migrate
-```
-
-Then replace the legacy TPM bootstrap at the end of `tmux.conf`:
-
-```tmux
-run '~/.tmux/plugins/tpm/tpm'
-```
-
-with:
-
-```tmux
-run-shell "tpm load"
-```
-
-and install the migrated plugin set:
-
-```bash
-tpm install
-```
-
-`tpm migrate` keeps plugin order, skips `tmux-plugins/tpm`, writes a new `tpm.yaml`, and leaves `tmux.conf` unchanged so you can review it first. Multi-file tmux configs are not merged automatically; skipped `source-file` directives are reported with line and path detail. Full migration details live in [docs/migration.md](./docs/migration.md).
+Migrating from legacy shell TPM? See [Migrating From Legacy TPM](./docs/MIGRATING_FROM_TPM.md).
 
 ## Why use tpm
 
@@ -52,26 +28,9 @@ tpm install
 - Compatible plugin model: existing tmux plugin repos still work as Git checkouts with executable root `*.tmux` entrypoints.
 - Better failure reporting: per-plugin failures are aggregated and surfaced clearly in stderr and tmux messages.
 
-## Original TPM vs. `tpm-rs`
-
-Existing tmux plugin repositories still work in both tools. The main differences are in how the plugin manager itself is configured, invoked, and laid out on disk.
-
-| Area | Original shell TPM | `tpm-rs` |
-|---|---|---|
-| Manager install | Clone `tmux-plugins/tpm` into `~/.tmux/plugins/tpm` and bootstrap it from `tmux.conf`. | Install a standalone `tpm` binary and call `run-shell "tpm load"` from `tmux.conf`. |
-| Plugin source of truth | Declare plugins inline in `tmux.conf` with `set -g @plugin '...'`. | Declare plugins in `tpm.yaml`; `tmux.conf` only loads them. |
-| Usage model | Manage plugins through TPM shell scripts and tmux-driven workflows. | Manage plugins through native CLI subcommands such as `install`, `update`, `cleanup`, `add`, and `remove`. |
-| Key bindings | Ships built-in `prefix + I`, `prefix + U`, and `prefix + alt + u` flows. | Ships no built-in key bindings; run the CLI directly or bind tmux keys to the CLI yourself. |
-| Startup behavior | Startup is tied to sourcing the TPM checkout from `tmux.conf`, and install/update flows are tmux-driven. | `tpm load` is offline-only and only loads already-installed plugins during tmux startup. |
-| Plugin source syntax | Commonly uses inline plugin strings such as `owner/repo`, `owner/repo#branch`, or Git SSH URLs. | Accepts `owner/repo`, full Git URLs, SSH Git URLs, and local paths, with structured `branch` or `ref` fields in YAML. |
-| Owner/repo variance on disk | Plugins live under one plugin root alongside the TPM checkout. | Git-hosted plugins keep their full namespace on disk, for example `${plugins_dir}/tmux-plugins/tmux-sensible`, and duplicate install paths are rejected. |
-| Filesystem layout | Defaults to the manager-centric `~/.tmux/plugins` tree. | Uses XDG-resolved config, data, state, and cache directories by default, with `paths.plugins` or `--plugins-dir` overrides. |
-| Output and automation | Primarily interactive tmux messages and shell-script behavior. | Adds stable line-oriented stdout, `--json` for `paths`/`list`/`doctor`, per-server load logs, and clearer aggregated failures. |
-| Command surface | Focused on tmux-integrated install, update, clean, and load flows. | Adds `paths`, `list`, `doctor`, `self-update`, and config-aware `add`/`remove`. |
-
 ## Quick Start
 
-If you are migrating from the original shell TPM, prefer the migration flow above. The steps below are the clean-slate path.
+New to tmux plugins? The steps below install two common plugins and load them from `tmux.conf`. If you are migrating from the original shell TPM, use [Migrating From Legacy TPM](./docs/MIGRATING_FROM_TPM.md).
 
 ### 1. Install `tpm`
 
@@ -117,6 +76,8 @@ plugins:
   - source: tmux-plugins/tmux-resurrect
 ```
 
+`tmux-sensible` applies widely used tmux defaults. `tmux-resurrect` can save and restore tmux sessions.
+
 Or let `tpm` create it and install plugins for you:
 
 ```bash
@@ -133,6 +94,8 @@ Add this line at the end of `tmux.conf`:
 run-shell "tpm load"
 ```
 
+Plugin-specific tmux options still belong in `tmux.conf`. `tpm.yaml` only declares which plugins to install and load.
+
 ### 4. Install and inspect plugins
 
 ```bash
@@ -140,6 +103,12 @@ tpm install
 tpm list
 tpm paths
 tpm doctor
+```
+
+Then reload your tmux config, or restart tmux:
+
+```bash
+tmux source-file ~/.tmux.conf
 ```
 
 Common follow-up workflows:
@@ -297,17 +266,6 @@ error: load reported 2 failed operations
 
 When `tpm load` runs inside tmux, failures are also mirrored through `display-message`. A single failure includes the detail directly; multiple failures collapse to a count and point back to stderr.
 
-## Migration
-
-Migration guidance from shell TPM lives in [docs/migration.md](./docs/migration.md).
-
-Short version:
-
-1. Install `tpm`, preferably with the install script.
-2. Create `tpm.yaml`.
-3. Replace the old TPM bootstrap with `run-shell "tpm load"`.
-4. Run `tpm install`.
-
 ## Development
 
 This repository pins Rust in [`rust-toolchain.toml`](./rust-toolchain.toml) and uses [mise](https://mise.jdx.dev/) as a task runner.
@@ -324,8 +282,6 @@ cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-targets
 ```
-
-The long-form implementation record and milestone tracking live in [PLAN.md](./PLAN.md).
 
 ## License
 
