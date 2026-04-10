@@ -1,12 +1,15 @@
 use std::{
-    env, fs,
-    io::{self, IsTerminal, Write},
+    fs,
+    io::{self, IsTerminal},
     path::Path,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use crate::{
-    commands::sync::{self, SyncPlugin},
+    commands::{
+        progress::{ProgressStream, display_user_path, format_duration, indent_detail, pluralize},
+        sync::{self, SyncPlugin},
+    },
     error::{AppError, Result},
     paths::ResolvedPaths,
 };
@@ -41,12 +44,6 @@ impl InstallReport {
 
         self.events.push(event);
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ProgressStream {
-    Stdout,
-    Stderr,
 }
 
 #[derive(Debug)]
@@ -149,23 +146,11 @@ impl HumanInstallUi {
     }
 
     fn write(&self, message: &str) {
-        match self.stream {
-            ProgressStream::Stdout => {
-                print!("{message}");
-                let _ = io::stdout().flush();
-            }
-            ProgressStream::Stderr => {
-                eprint!("{message}");
-                let _ = io::stderr().flush();
-            }
-        }
+        self.stream.write(message);
     }
 
     fn write_line(&self, message: &str) {
-        match self.stream {
-            ProgressStream::Stdout => println!("{message}"),
-            ProgressStream::Stderr => eprintln!("{message}"),
-        }
+        self.stream.write_line(message);
     }
 }
 
@@ -293,84 +278,5 @@ fn print_machine_report(report: &InstallReport) {
                 eprintln!("Failed to install {name}: {error}");
             }
         }
-    }
-}
-
-fn pluralize(count: usize, singular: &str) -> String {
-    if count == 1 {
-        singular.to_string()
-    } else {
-        format!("{singular}s")
-    }
-}
-
-fn display_user_path(path: &Path) -> String {
-    let home = env::var_os("HOME").map(std::path::PathBuf::from);
-    display_user_path_with_home(path, home.as_deref())
-}
-
-fn display_user_path_with_home(path: &Path, home: Option<&Path>) -> String {
-    if let Some(home) = home
-        && let Ok(relative) = path.strip_prefix(home)
-    {
-        return if relative.as_os_str().is_empty() {
-            "~".to_string()
-        } else {
-            format!("~/{}", relative.display())
-        };
-    }
-
-    path.display().to_string()
-}
-
-fn indent_detail(detail: &str) -> String {
-    detail.replace('\n', "\n         ")
-}
-
-fn format_duration(duration: Duration) -> String {
-    if duration.as_secs() >= 1 {
-        format!("{:.1}s", duration.as_secs_f64())
-    } else {
-        format!("{}ms", duration.as_millis())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{path::Path, time::Duration};
-
-    use super::{display_user_path_with_home, format_duration, indent_detail};
-
-    #[test]
-    fn shortens_home_prefixed_paths_for_human_output() {
-        assert_eq!(
-            display_user_path_with_home(
-                Path::new("/Users/pgilad/.local/share/tpm/plugins"),
-                Some(Path::new("/Users/pgilad"))
-            ),
-            "~/.local/share/tpm/plugins"
-        );
-    }
-
-    #[test]
-    fn leaves_non_home_paths_unchanged_for_human_output() {
-        assert_eq!(
-            display_user_path_with_home(
-                Path::new("/tmp/tpm/plugins"),
-                Some(Path::new("/Users/pgilad"))
-            ),
-            "/tmp/tpm/plugins"
-        );
-    }
-
-    #[test]
-    fn indents_multiline_failure_details() {
-        assert_eq!(indent_detail("first\nsecond"), "first\n         second");
-    }
-
-    #[test]
-    fn formats_short_and_long_durations() {
-        assert_eq!(format_duration(Duration::from_millis(240)), "240ms");
-        assert_eq!(format_duration(Duration::from_millis(1250)), "1.2s");
     }
 }

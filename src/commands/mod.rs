@@ -6,6 +6,7 @@ mod list;
 mod load;
 mod migrate;
 mod paths;
+mod progress;
 mod remove;
 mod self_update;
 mod sync;

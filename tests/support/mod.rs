@@ -28,6 +28,27 @@ where
     run_binary_with_env(Path::new(env!("CARGO_BIN_EXE_tpm")), cwd, args, envs)
 }
 
+#[cfg(unix)]
+pub fn run_tpm_in_pty<I, S>(cwd: &Path, args: I) -> Output
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    run_tpm_in_pty_with_env(cwd, args, std::iter::empty::<(&str, &str)>())
+}
+
+#[cfg(unix)]
+pub fn run_tpm_in_pty_with_env<I, S, E, K, V>(cwd: &Path, args: I, envs: E) -> Output
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+    E: IntoIterator<Item = (K, V)>,
+    K: AsRef<OsStr>,
+    V: AsRef<OsStr>,
+{
+    run_binary_in_pty_with_env(Path::new(env!("CARGO_BIN_EXE_tpm")), cwd, args, envs)
+}
+
 pub fn run_tpm_without_home_with_env<I, S, E, K, V>(cwd: &Path, args: I, envs: E) -> Output
 where
     I: IntoIterator<Item = S>,
@@ -57,13 +78,7 @@ where
     K: AsRef<OsStr>,
     V: AsRef<OsStr>,
 {
-    let home_dir = cwd.join("home");
-    fs::create_dir_all(&home_dir).expect("home directory should be created");
-    fs::write(
-        home_dir.join(".gitconfig"),
-        concat!("[protocol \"file\"]\n", "\tallow = always\n",),
-    )
-    .expect("git config should be writable");
+    let home_dir = test_home_dir(cwd);
 
     let mut command = Command::new(binary);
     command
@@ -76,6 +91,69 @@ where
         command.env(key, value);
     }
     command.output().expect("tpm command should run")
+}
+
+#[cfg(unix)]
+pub fn run_binary_in_pty_with_env<I, S, E, K, V>(
+    binary: &Path,
+    cwd: &Path,
+    args: I,
+    envs: E,
+) -> Output
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+    E: IntoIterator<Item = (K, V)>,
+    K: AsRef<OsStr>,
+    V: AsRef<OsStr>,
+{
+    let home_dir = test_home_dir(cwd);
+    let args = args
+        .into_iter()
+        .map(|arg| arg.as_ref().to_os_string())
+        .collect::<Vec<_>>();
+
+    let mut command = script_command(binary, &args);
+    command
+        .current_dir(cwd)
+        .env("HOME", &home_dir)
+        .env_remove("TMUX")
+        .env_remove("TMUX_PANE");
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+    command
+        .output()
+        .expect("tpm command should run in a pseudo-terminal")
+}
+
+pub fn normalize_terminal_output(output: &[u8]) -> String {
+    let mut rendered = String::new();
+
+    for byte in output {
+        match byte {
+            b'\r' => {}
+            0x08 | 0x7f => {
+                rendered.pop();
+            }
+            b'\n' | b'\t' => rendered.push(*byte as char),
+            0x20..=0x7e => rendered.push(*byte as char),
+            _ => {}
+        }
+    }
+
+    rendered
+}
+
+fn test_home_dir(cwd: &Path) -> PathBuf {
+    let home_dir = cwd.join("home");
+    fs::create_dir_all(&home_dir).expect("home directory should be created");
+    fs::write(
+        home_dir.join(".gitconfig"),
+        concat!("[protocol \"file\"]\n", "\tallow = always\n",),
+    )
+    .expect("git config should be writable");
+    home_dir
 }
 
 pub fn unique_temp_dir(name: &str) -> PathBuf {
@@ -172,4 +250,40 @@ pub fn publish_repo(author_repo: &Path, bare_repo: &Path) {
 
     git(root, ["clone", "--bare", author_repo_str, bare_repo_str]);
     git(author_repo, ["remote", "add", "origin", bare_repo_str]);
+}
+
+#[cfg(target_os = "macos")]
+fn script_command(binary: &Path, args: &[std::ffi::OsString]) -> Command {
+    let mut command = Command::new("script");
+    command.arg("-q").arg("/dev/null").arg(binary).args(args);
+    command
+}
+
+#[cfg(target_os = "linux")]
+fn script_command(binary: &Path, args: &[std::ffi::OsString]) -> Command {
+    let mut rendered = Vec::with_capacity(args.len() + 1);
+    rendered.push(shell_quote(binary.as_os_str()));
+    rendered.extend(args.iter().map(|arg| shell_quote(arg)));
+
+    let mut command = Command::new("script");
+    command
+        .arg("-q")
+        .arg("-e")
+        .arg("-c")
+        .arg(rendered.join(" "))
+        .arg("/dev/null");
+    command
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn script_command(binary: &Path, args: &[std::ffi::OsString]) -> Command {
+    let mut command = Command::new(binary);
+    command.args(args);
+    command
+}
+
+#[cfg(target_os = "linux")]
+fn shell_quote(value: &OsStr) -> String {
+    let rendered = value.to_string_lossy().replace('\'', "'\"'\"'");
+    format!("'{rendered}'")
 }
