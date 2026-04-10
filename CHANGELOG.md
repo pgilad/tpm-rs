@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.04.10-8
+
+- Update actions (b50c909)
+- Update install/update (e8bdb44)
+- Update docs (07885b2)
+
 ## 2026.04.10-7
 
 - Improve install script (23a3c67)
