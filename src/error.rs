@@ -2,6 +2,8 @@ use std::{io, path::PathBuf, process::ExitCode};
 
 use thiserror::Error;
 
+use crate::user_path::display_user_path;
+
 pub type Result<T> = std::result::Result<T, AppError>;
 
 #[derive(Debug, Error)]
@@ -12,45 +14,48 @@ pub enum AppError {
     InvalidEnvironmentSyntax { value: String },
     #[error("environment variable `{key}` referenced by `{value}` is not set")]
     MissingEnvironmentVariable { key: String, value: String },
-    #[error("failed to read config `{path}`: {source}")]
+    #[error("failed to read config `{}`: {source}", display_user_path(path))]
     ReadConfig {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("failed to create directory `{path}`: {source}")]
+    #[error("failed to create directory `{}`: {source}", display_user_path(path))]
     CreateDirectory {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("failed to read tmux config `{path}`: {source}")]
+    #[error("failed to read tmux config `{}`: {source}", display_user_path(path))]
     ReadTmuxConfig {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("failed to write config `{path}`: {source}")]
+    #[error("failed to write config `{}`: {source}", display_user_path(path))]
     WriteConfig {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("failed to inspect path `{path}`: {source}")]
+    #[error("failed to inspect path `{}`: {source}", display_user_path(path))]
     InspectPath {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("config `{path}` does not exist; create it with `tpm migrate` or `tpm add SOURCE`")]
+    #[error(
+        "config `{}` does not exist; create it with `tpm migrate` or `tpm add SOURCE`",
+        display_user_path(path)
+    )]
     ConfigNotFound { path: PathBuf },
     #[error("failed to resolve the current working directory: {0}")]
     CurrentDirectory(#[source] io::Error),
     #[error("failed to resolve the current executable path: {0}")]
     CurrentExecutable(#[source] io::Error),
-    #[error("invalid config `{path}`: {message}")]
+    #[error("invalid config `{}`: {message}", display_user_path(path))]
     InvalidConfig { path: PathBuf, message: String },
-    #[error("failed to serialize config `{path}`: {source}")]
+    #[error("failed to serialize config `{}`: {source}", display_user_path(path))]
     SerializeConfig {
         path: PathBuf,
         #[source]
@@ -85,7 +90,10 @@ pub enum AppError {
     Json(#[from] serde_json::Error),
     #[error("{message}")]
     Migration { message: String },
-    #[error("self-update failed while accessing `{path}`: {source}")]
+    #[error(
+        "self-update failed while accessing `{}`: {source}",
+        display_user_path(path)
+    )]
     SelfUpdatePath {
         path: PathBuf,
         #[source]

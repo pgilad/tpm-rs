@@ -5,6 +5,7 @@ use crate::{
     config::Config,
     error::{AppError, Result},
     plugin,
+    user_path::display_user_path,
 };
 
 pub fn run(config_override: Option<&Path>, name: &str) -> Result<()> {
@@ -18,6 +19,10 @@ pub fn run(config_override: Option<&Path>, name: &str) -> Result<()> {
     let install_name = plugin::install_name(&removed.source)?;
     config.save(&config_path)?;
 
-    println!("Removed {} from {}", install_name, config_path.display());
+    println!(
+        "Removed {} from {}",
+        install_name,
+        display_user_path(&config_path)
+    );
     Ok(())
 }

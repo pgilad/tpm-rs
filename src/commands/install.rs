@@ -214,7 +214,7 @@ fn install_plugin(plugin: &SyncPlugin) -> std::result::Result<InstallOutcome, St
             return Err(format!(
                 "{}; also failed to remove partial checkout {}: {}",
                 result.expect_err("install should have failed"),
-                plugin.install_dir.display(),
+                display_user_path(&plugin.install_dir),
                 source
             ));
         }
@@ -269,10 +269,13 @@ fn print_machine_report(report: &InstallReport) {
     for event in &report.events {
         match event {
             InstallEvent::Installed(name, path) => {
-                println!("Installed {name} into {}", path.display());
+                println!("Installed {name} into {}", display_user_path(path));
             }
             InstallEvent::Skipped(name, path) => {
-                println!("Skipped already installed {name} at {}", path.display());
+                println!(
+                    "Skipped already installed {name} at {}",
+                    display_user_path(path)
+                );
             }
             InstallEvent::Failed(name, error) => {
                 eprintln!("Failed to install {name}: {error}");

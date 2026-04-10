@@ -12,6 +12,7 @@ use tar::Archive;
 
 use crate::{
     error::{AppError, Result},
+    user_path::display_user_path,
     version::{self, VersionStatus},
 };
 
@@ -52,14 +53,14 @@ pub fn run() -> Result<()> {
         VersionStatus::Same => {
             println!(
                 "Already up to date tpm {current_version} at {}",
-                current_executable.display()
+                display_user_path(&current_executable)
             );
             Ok(())
         }
         VersionStatus::CurrentIsNewer => {
             println!(
                 "Current tpm {current_version} at {} is newer than available release {latest_version}",
-                current_executable.display()
+                display_user_path(&current_executable)
             );
             Ok(())
         }
@@ -67,7 +68,7 @@ pub fn run() -> Result<()> {
             replace_executable(&extracted_binary, &current_executable)?;
             println!(
                 "Updated tpm from {current_version} to {latest_version} at {}",
-                current_executable.display()
+                display_user_path(&current_executable)
             );
             Ok(())
         }
@@ -157,7 +158,7 @@ fn run_download_command(
         Err(error) if error.kind() == io::ErrorKind::NotFound => DownloadCommandResult::NotFound,
         Err(error) => DownloadCommandResult::Failed(format!(
             "{program} could not download {source} to {}: {error}",
-            destination.display()
+            display_user_path(destination)
         )),
     }
 }
@@ -193,7 +194,7 @@ fn verify_checksum(archive_path: &Path, checksum_path: &Path) -> Result<()> {
         return Err(AppError::SelfUpdate {
             message: format!(
                 "downloaded checksum file {} was empty",
-                checksum_path.display()
+                display_user_path(checksum_path)
             ),
         });
     }
@@ -244,7 +245,7 @@ fn extract_archive(archive_path: &Path, destination: &Path) -> Result<()> {
         .map_err(|source| AppError::SelfUpdate {
             message: format!(
                 "failed to extract downloaded archive {}: {source}",
-                archive_path.display()
+                display_user_path(archive_path)
             ),
         })
 }
@@ -263,7 +264,7 @@ fn installed_version(path: &Path) -> Result<String> {
         return Err(AppError::SelfUpdate {
             message: format!(
                 "downloaded tpm binary at {} failed to report its version{}",
-                path.display(),
+                display_user_path(path),
                 if detail.is_empty() {
                     String::new()
                 } else {
@@ -279,7 +280,7 @@ fn installed_version(path: &Path) -> Result<String> {
         return Err(AppError::SelfUpdate {
             message: format!(
                 "downloaded tpm binary at {} reported an empty version string",
-                path.display()
+                display_user_path(path)
             ),
         });
     }
@@ -291,7 +292,7 @@ fn replace_executable(replacement: &Path, destination: &Path) -> Result<()> {
     let parent = destination.parent().ok_or_else(|| AppError::SelfUpdate {
         message: format!(
             "current executable path {} does not have a parent directory",
-            destination.display()
+            display_user_path(destination)
         ),
     })?;
     let file_name = destination
@@ -299,7 +300,7 @@ fn replace_executable(replacement: &Path, destination: &Path) -> Result<()> {
         .ok_or_else(|| AppError::SelfUpdate {
             message: format!(
                 "current executable path {} does not have a file name",
-                destination.display()
+                display_user_path(destination)
             ),
         })?
         .to_string_lossy();
@@ -329,7 +330,7 @@ fn replace_executable(replacement: &Path, destination: &Path) -> Result<()> {
         return Err(AppError::SelfUpdate {
             message: format!(
                 "failed to replace {} with the downloaded binary: {source}",
-                destination.display()
+                display_user_path(destination)
             ),
         });
     }
@@ -372,7 +373,7 @@ impl TempDir {
         Err(AppError::SelfUpdate {
             message: format!(
                 "failed to allocate a temporary directory under {}",
-                base.display()
+                display_user_path(&base)
             ),
         })
     }

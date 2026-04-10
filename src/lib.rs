@@ -5,6 +5,7 @@ mod error;
 mod paths;
 mod plugin;
 mod tmux;
+mod user_path;
 mod version;
 
 use clap::Parser;

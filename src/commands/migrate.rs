@@ -8,6 +8,7 @@ use crate::{
     error::{AppError, Result},
     paths::normalize_lexically,
     plugin,
+    user_path::display_user_path,
 };
 
 use super::{config_file_path, current_dir};
@@ -44,7 +45,7 @@ pub fn run(config_override: Option<&Path>, tmux_conf_override: Option<&Path>) ->
         return Err(AppError::Migration {
             message: format!(
                 "config already exists at `{}`; refusing to overwrite",
-                config_path.display()
+                display_user_path(&config_path)
             ),
         });
     }
@@ -76,8 +77,8 @@ pub fn run(config_override: Option<&Path>, tmux_conf_override: Option<&Path>) ->
     for skipped in &parsed.skipped_source_files {
         println!("{}", skipped.render());
     }
-    println!("Wrote tpm.yaml to {}", config_path.display());
-    println!("Did not modify {}", tmux_conf_path.display());
+    println!("Wrote tpm.yaml to {}", display_user_path(&config_path));
+    println!("Did not modify {}", display_user_path(&tmux_conf_path));
     println!(
         "You may still need to replace the legacy TPM bootstrap with `run-shell \"tpm load\"` at the end of the file"
     );
@@ -90,14 +91,14 @@ fn no_plugins_detected_error(tmux_conf_path: &Path, parsed: &ParsedTmuxConfig) -
         return AppError::Migration {
             message: format!(
                 "no migratable tmux plugins were detected in `{}`",
-                tmux_conf_path.display()
+                display_user_path(tmux_conf_path)
             ),
         };
     }
 
     let mut message = format!(
         "no migratable tmux plugins were detected in `{}`\n",
-        tmux_conf_path.display()
+        display_user_path(tmux_conf_path)
     );
     message.push_str(&format!(
         "Skipped {} source-file directive(s); multi-file tmux configs are not supported\n",
@@ -145,7 +146,7 @@ fn resolve_tmux_conf_path(tmux_conf_override: Option<&Path>) -> Result<PathBuf> 
                 "no tmux config file found; checked: {}",
                 candidates
                     .iter()
-                    .map(|path| format!("`{}`", path.display()))
+                    .map(|path| format!("`{}`", display_user_path(path)))
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
@@ -191,7 +192,7 @@ fn parse_tmux_config(path: &Path) -> Result<ParsedTmuxConfig> {
         let tokens = tokenize_tmux_line(line).map_err(|message| AppError::Migration {
             message: format!(
                 "tmux config `{}` line {}: {message}",
-                path.display(),
+                display_user_path(path),
                 line_number
             ),
         })?;
@@ -208,7 +209,7 @@ fn parse_tmux_config(path: &Path) -> Result<ParsedTmuxConfig> {
             return Err(AppError::Migration {
                 message: format!(
                     "tmux config `{}` line {}: inline tmux command separators (`;`) are not supported during migration; move each `@plugin` or `source-file` command onto its own line",
-                    path.display(),
+                    display_user_path(path),
                     line_number,
                 ),
             });
@@ -380,7 +381,7 @@ impl SkippedSourceFile {
             Some(path) => format!(
                 "Skipped source-file on line {}: {}",
                 self.line_number,
-                path.display()
+                display_user_path(path)
             ),
             None => format!(
                 "Skipped source-file on line {}: could not determine the sourced file path",

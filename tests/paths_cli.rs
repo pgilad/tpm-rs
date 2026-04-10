@@ -4,7 +4,50 @@ use serde_json::Value;
 
 mod support;
 
-use support::{run_tpm_without_home_with_env, unique_temp_dir};
+use support::{run_tpm_with_env, run_tpm_without_home_with_env, unique_temp_dir};
+
+#[test]
+fn paths_shortens_home_paths_in_human_output() {
+    let workspace = unique_temp_dir("paths-home");
+    let home_dir = workspace.join("home");
+
+    let output = run_tpm_with_env(
+        &workspace,
+        ["paths"],
+        vec![
+            (
+                "XDG_CONFIG_HOME".to_string(),
+                home_dir.join(".config").display().to_string(),
+            ),
+            (
+                "XDG_DATA_HOME".to_string(),
+                home_dir.join(".local").join("share").display().to_string(),
+            ),
+            (
+                "XDG_STATE_HOME".to_string(),
+                home_dir.join(".local").join("state").display().to_string(),
+            ),
+            (
+                "XDG_CACHE_HOME".to_string(),
+                home_dir.join(".cache").display().to_string(),
+            ),
+        ],
+    );
+
+    assert!(output.status.success(), "paths should succeed: {output:?}");
+    assert_eq!(
+        String::from_utf8(output.stdout).expect("stdout should be utf-8"),
+        concat!(
+            "Config file: ~/.config/tpm/tpm.yaml\n",
+            "Config dir:  ~/.config/tpm\n",
+            "Data dir:    ~/.local/share/tpm\n",
+            "State dir:   ~/.local/state/tpm\n",
+            "Cache dir:   ~/.cache/tpm\n",
+            "Plugins dir: ~/.local/share/tpm/plugins\n",
+            "Config:      missing\n",
+        )
+    );
+}
 
 #[test]
 fn paths_resolves_without_home_when_all_required_paths_are_overridden() {

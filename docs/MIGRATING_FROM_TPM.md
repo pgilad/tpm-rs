@@ -54,8 +54,8 @@ Example output:
 ```text
 Detected and parsed 2 plugin(s) correctly
 Skipped 0 source-file directive(s); multi-file tmux configs are not supported
-Wrote tpm.yaml to /Users/alice/.config/tpm/tpm.yaml
-Did not modify /Users/alice/.tmux.conf
+Wrote tpm.yaml to ~/.config/tpm/tpm.yaml
+Did not modify ~/.tmux.conf
 You may still need to replace the legacy TPM bootstrap with `run-shell "tpm load"` at the end of the file
 ```
 

@@ -9,6 +9,7 @@ use crate::{
     config::Config,
     error::{AppError, Result},
     plugin,
+    user_path::display_user_path,
 };
 
 const LEGACY_TPM_INSTALL_NAME: &str = "tpm";
@@ -177,17 +178,17 @@ fn prune_empty_parent_dirs(path: Option<&Path>, plugins_dir: &Path) {
 
 fn print_report(report: &CleanupReport) {
     for path in &report.removed {
-        println!("Removed stale plugin directory {}", path.display());
+        println!("Removed stale plugin directory {}", display_user_path(path));
     }
 
     for path in &report.preserved {
-        println!("Preserved legacy TPM checkout {}", path.display());
+        println!("Preserved legacy TPM checkout {}", display_user_path(path));
     }
 
     for (path, error) in &report.failed {
         eprintln!(
             "Failed to remove stale plugin directory {}: {}",
-            path.display(),
+            display_user_path(path),
             error
         );
     }

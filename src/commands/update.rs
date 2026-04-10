@@ -230,7 +230,7 @@ fn update_plugin(plugin: &SyncPlugin) -> std::result::Result<UpdateOutcome, Stri
     if sync::git_is_dirty(&plugin.install_dir).map_err(|error| error.to_string())? {
         return Err(format!(
             "plugin checkout has uncommitted tracked changes: {}",
-            plugin.install_dir.display()
+            display_user_path(&plugin.install_dir)
         ));
     }
 
@@ -300,21 +300,21 @@ fn print_machine_report(report: &UpdateReport) {
     for event in &report.events {
         match event {
             UpdateEvent::Updated(name, path) => {
-                println!("Updated {name} in {}", path.display());
+                println!("Updated {name} in {}", display_user_path(path));
             }
             UpdateEvent::AlreadyCurrent(name, path) => {
-                println!("Already up to date {name} at {}", path.display());
+                println!("Already up to date {name} at {}", display_user_path(path));
             }
             UpdateEvent::Pinned(name, path, reference) => {
                 println!(
                     "Kept pinned {name} at ref {reference} in {}",
-                    path.display()
+                    display_user_path(path)
                 );
             }
             UpdateEvent::RealignedPinned(name, path, reference) => {
                 println!(
                     "Realigned pinned {name} to ref {reference} in {}",
-                    path.display()
+                    display_user_path(path)
                 );
             }
             UpdateEvent::Failed(name, error) => {

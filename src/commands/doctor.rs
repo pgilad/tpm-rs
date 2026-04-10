@@ -13,6 +13,7 @@ use crate::{
     error::{AppError, Result},
     paths::ResolvedPaths,
     plugin,
+    user_path::display_user_path,
 };
 
 const MINIMUM_TMUX_VERSION: &str = "3.2";
@@ -42,6 +43,12 @@ enum DoctorStatus {
     Skip,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum PathDisplayMode {
+    Absolute,
+    User,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NumericVersion(Vec<u64>);
 
@@ -50,7 +57,12 @@ pub fn run(
     plugins_override: Option<&Path>,
     json: bool,
 ) -> Result<()> {
-    let report = build_report(config_override, plugins_override)?;
+    let path_display = if json {
+        PathDisplayMode::Absolute
+    } else {
+        PathDisplayMode::User
+    };
+    let report = build_report(config_override, plugins_override, path_display)?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
@@ -71,11 +83,12 @@ pub fn run(
 fn build_report(
     config_override: Option<&Path>,
     plugins_override: Option<&Path>,
+    path_display: PathDisplayMode,
 ) -> Result<DoctorReport> {
     let base_paths = base_paths(config_override, plugins_override)?;
     let mut checks = Vec::new();
 
-    let config_result = inspect_config(&base_paths.config_file, &mut checks)?;
+    let config_result = inspect_config(&base_paths.config_file, &mut checks, path_display)?;
     let git_check = inspect_tool("git", &["--version"], MINIMUM_GIT_VERSION);
     let git_available = git_check.status == DoctorStatus::Pass;
     checks.push(git_check);
@@ -87,10 +100,15 @@ fn build_report(
         base_paths.clone()
     };
 
-    checks.extend(path_checks(&effective_paths));
+    checks.extend(path_checks(&effective_paths, path_display));
 
     if let Some(config) = config_result {
-        checks.extend(plugin_checks(&config, &effective_paths, git_available)?);
+        checks.extend(plugin_checks(
+            &config,
+            &effective_paths,
+            git_available,
+            path_display,
+        )?);
     } else {
         checks.push(DoctorCheck::skip(
             "plugins",
@@ -111,11 +129,15 @@ fn build_report(
     })
 }
 
-fn inspect_config(path: &Path, checks: &mut Vec<DoctorCheck>) -> Result<Option<Config>> {
+fn inspect_config(
+    path: &Path,
+    checks: &mut Vec<DoctorCheck>,
+    path_display: PathDisplayMode,
+) -> Result<Option<Config>> {
     if !path.exists() {
         checks.push(DoctorCheck::fail(
             "config_file",
-            format!("missing config file at {}", path.display()),
+            format!("missing config file at {}", format_path(path, path_display)),
         ));
         checks.push(DoctorCheck::skip(
             "config_schema",
@@ -126,7 +148,7 @@ fn inspect_config(path: &Path, checks: &mut Vec<DoctorCheck>) -> Result<Option<C
 
     checks.push(DoctorCheck::pass(
         "config_file",
-        format!("found config file at {}", path.display()),
+        format!("found config file at {}", format_path(path, path_display)),
     ));
 
     match Config::load_if_exists(path) {
@@ -207,34 +229,49 @@ fn inspect_tool(name: &str, args: &[&str], minimum_version: &str) -> DoctorCheck
     )
 }
 
-fn path_checks(paths: &ResolvedPaths) -> Vec<DoctorCheck> {
+fn path_checks(paths: &ResolvedPaths, path_display: PathDisplayMode) -> Vec<DoctorCheck> {
     vec![
-        inspect_directory_path("config_dir", &paths.config_dir),
-        inspect_directory_path("data_dir", &paths.data_dir),
-        inspect_directory_path("state_dir", &paths.state_dir),
-        inspect_directory_path("cache_dir", &paths.cache_dir),
-        inspect_directory_path("plugins_dir", &paths.plugins_dir),
+        inspect_directory_path("config_dir", &paths.config_dir, path_display),
+        inspect_directory_path("data_dir", &paths.data_dir, path_display),
+        inspect_directory_path("state_dir", &paths.state_dir, path_display),
+        inspect_directory_path("cache_dir", &paths.cache_dir, path_display),
+        inspect_directory_path("plugins_dir", &paths.plugins_dir, path_display),
     ]
 }
 
-fn inspect_directory_path(name: &str, path: &Path) -> DoctorCheck {
+fn inspect_directory_path(name: &str, path: &Path, path_display: PathDisplayMode) -> DoctorCheck {
     if path.exists() {
         if !path.is_dir() {
-            return DoctorCheck::fail(name, format!("expected a directory at {}", path.display()));
+            return DoctorCheck::fail(
+                name,
+                format!(
+                    "expected a directory at {}",
+                    format_path(path, path_display)
+                ),
+            );
         }
 
         match fs::metadata(path) {
             Ok(metadata) if metadata.permissions().readonly() => DoctorCheck::fail(
                 name,
-                format!("directory exists but appears read-only: {}", path.display()),
+                format!(
+                    "directory exists but appears read-only: {}",
+                    format_path(path, path_display)
+                ),
             ),
             Ok(_) => DoctorCheck::pass(
                 name,
-                format!("directory exists and appears writable: {}", path.display()),
+                format!(
+                    "directory exists and appears writable: {}",
+                    format_path(path, path_display)
+                ),
             ),
             Err(error) => DoctorCheck::fail(
                 name,
-                format!("failed to inspect directory {}: {error}", path.display()),
+                format!(
+                    "failed to inspect directory {}: {error}",
+                    format_path(path, path_display)
+                ),
             ),
         }
     } else {
@@ -243,7 +280,7 @@ fn inspect_directory_path(name: &str, path: &Path) -> DoctorCheck {
                 name,
                 format!(
                     "path does not exist and no existing parent could be found for {}",
-                    path.display()
+                    format_path(path, path_display)
                 ),
             );
         };
@@ -253,19 +290,22 @@ fn inspect_directory_path(name: &str, path: &Path) -> DoctorCheck {
                 name,
                 format!(
                     "path does not exist and nearest existing parent appears read-only: {}",
-                    parent.display()
+                    format_path(&parent, path_display)
                 ),
             ),
             Ok(_) => DoctorCheck::pass(
                 name,
                 format!(
                     "path does not exist but nearest existing parent appears writable: {}",
-                    parent.display()
+                    format_path(&parent, path_display)
                 ),
             ),
             Err(error) => DoctorCheck::fail(
                 name,
-                format!("failed to inspect parent {}: {error}", parent.display()),
+                format!(
+                    "failed to inspect parent {}: {error}",
+                    format_path(&parent, path_display)
+                ),
             ),
         }
     }
@@ -288,6 +328,7 @@ fn plugin_checks(
     config: &Config,
     paths: &ResolvedPaths,
     git_available: bool,
+    path_display: PathDisplayMode,
 ) -> Result<Vec<DoctorCheck>> {
     config
         .plugins
@@ -302,7 +343,7 @@ fn plugin_checks(
                     check_name,
                     format!(
                         "plugin is disabled in config; expected install dir {}",
-                        install_dir.display()
+                        format_path(&install_dir, path_display)
                     ),
                 ));
             }
@@ -310,7 +351,10 @@ fn plugin_checks(
             if !install_dir.exists() {
                 return Ok(DoctorCheck::fail(
                     check_name,
-                    format!("missing plugin checkout at {}", install_dir.display()),
+                    format!(
+                        "missing plugin checkout at {}",
+                        format_path(&install_dir, path_display)
+                    ),
                 ));
             }
 
@@ -319,7 +363,7 @@ fn plugin_checks(
                     check_name,
                     format!(
                         "expected plugin checkout directory at {}",
-                        install_dir.display()
+                        format_path(&install_dir, path_display)
                     ),
                 ));
             }
@@ -329,7 +373,7 @@ fn plugin_checks(
                     check_name,
                     format!(
                         "plugin checkout is not a git repository: {}",
-                        install_dir.display()
+                        format_path(&install_dir, path_display)
                     ),
                 ));
             }
@@ -341,7 +385,7 @@ fn plugin_checks(
                     check_name,
                     format!(
                         "skipped repository integrity checks because git is unavailable: {}",
-                        install_dir.display()
+                        format_path(&install_dir, path_display)
                     ),
                 ));
             }
@@ -356,21 +400,21 @@ fn plugin_checks(
                     check_name,
                     format!(
                         "plugin checkout has uncommitted tracked changes: {}",
-                        install_dir.display()
+                        format_path(&install_dir, path_display)
                     ),
                 )),
                 Ok(false) => Ok(DoctorCheck::pass(
                     check_name,
                     format!(
                         "plugin checkout is present and clean: {}",
-                        install_dir.display()
+                        format_path(&install_dir, path_display)
                     ),
                 )),
                 Err(error) => Ok(DoctorCheck::fail_with_detail(
                     check_name,
                     format!(
                         "failed to inspect plugin checkout at {}",
-                        install_dir.display()
+                        format_path(&install_dir, path_display)
                     ),
                     error.to_string(),
                 )),
@@ -418,12 +462,19 @@ fn print_human(report: &DoctorReport) {
 fn print_missing_config_guide(config_file: &Path) {
     println!();
     println!("Getting started:");
-    println!("  Expected config path: {}", config_file.display());
+    println!("  Expected config path: {}", display_user_path(config_file));
     println!("  Existing shell TPM setup: run `tpm migrate`");
     println!("  Different tmux.conf path: run `tpm migrate --tmux-conf PATH`");
     println!("  New setup: run `tpm add tmux-plugins/tmux-sensible`");
     println!("  Then add `run-shell \"tpm load\"` to the end of `tmux.conf`");
     println!("  Finally run `tpm install`");
+}
+
+fn format_path(path: &Path, mode: PathDisplayMode) -> String {
+    match mode {
+        PathDisplayMode::Absolute => path.display().to_string(),
+        PathDisplayMode::User => display_user_path(path),
+    }
 }
 
 impl DoctorCheck {

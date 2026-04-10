@@ -43,18 +43,13 @@ fn migrate_reads_home_dot_tmux_and_writes_absolute_local_paths() {
     );
     assert_eq!(
         String::from_utf8(output.stdout).expect("stdout should be utf-8"),
-        format!(
-            concat!(
-                "Detected and parsed 3 plugin(s) correctly\n",
-                "Skipped 1 source-file directive(s); multi-file tmux configs are not supported\n",
-                "Skipped source-file on line 6: {}\n",
-                "Wrote tpm.yaml to {}\n",
-                "Did not modify {}\n",
-                "You may still need to replace the legacy TPM bootstrap with `run-shell \"tpm load\"` at the end of the file\n",
-            ),
-            sourced_conf_path.display(),
-            config_path.display(),
-            tmux_conf_path.display(),
+        concat!(
+            "Detected and parsed 3 plugin(s) correctly\n",
+            "Skipped 1 source-file directive(s); multi-file tmux configs are not supported\n",
+            "Skipped source-file on line 6: ~/.config/tmux/extra.conf\n",
+            "Wrote tpm.yaml to ~/.config/tpm/tpm.yaml\n",
+            "Did not modify ~/.tmux\n",
+            "You may still need to replace the legacy TPM bootstrap with `run-shell \"tpm load\"` at the end of the file\n",
         ),
     );
     assert_eq!(
@@ -108,16 +103,12 @@ fn migrate_reads_home_dot_tmux_conf() {
     );
     assert_eq!(
         String::from_utf8(output.stdout).expect("stdout should be utf-8"),
-        format!(
-            concat!(
-                "Detected and parsed 1 plugin(s) correctly\n",
-                "Skipped 0 source-file directive(s); multi-file tmux configs are not supported\n",
-                "Wrote tpm.yaml to {}\n",
-                "Did not modify {}\n",
-                "You may still need to replace the legacy TPM bootstrap with `run-shell \"tpm load\"` at the end of the file\n",
-            ),
-            config_path.display(),
-            tmux_conf_path.display(),
+        concat!(
+            "Detected and parsed 1 plugin(s) correctly\n",
+            "Skipped 0 source-file directive(s); multi-file tmux configs are not supported\n",
+            "Wrote tpm.yaml to ~/.config/tpm/tpm.yaml\n",
+            "Did not modify ~/.tmux.conf\n",
+            "You may still need to replace the legacy TPM bootstrap with `run-shell \"tpm load\"` at the end of the file\n",
         ),
     );
     assert_eq!(
@@ -223,16 +214,12 @@ fn migrate_falls_back_to_xdg_tmux_conf() {
     );
     assert_eq!(
         String::from_utf8(output.stdout).expect("stdout should be utf-8"),
-        format!(
-            concat!(
-                "Detected and parsed 1 plugin(s) correctly\n",
-                "Skipped 0 source-file directive(s); multi-file tmux configs are not supported\n",
-                "Wrote tpm.yaml to {}\n",
-                "Did not modify {}\n",
-                "You may still need to replace the legacy TPM bootstrap with `run-shell \"tpm load\"` at the end of the file\n",
-            ),
-            config_path.display(),
-            tmux_conf_path.display(),
+        concat!(
+            "Detected and parsed 1 plugin(s) correctly\n",
+            "Skipped 0 source-file directive(s); multi-file tmux configs are not supported\n",
+            "Wrote tpm.yaml to ~/.config/tpm/tpm.yaml\n",
+            "Did not modify ~/.config/tmux/tmux.conf\n",
+            "You may still need to replace the legacy TPM bootstrap with `run-shell \"tpm load\"` at the end of the file\n",
         ),
     );
     assert_eq!(
@@ -280,10 +267,9 @@ fn migrate_refuses_to_overwrite_existing_tpm_yaml() {
     assert!(
         String::from_utf8(output.stderr)
             .expect("stderr should be utf-8")
-            .contains(&format!(
-                "error: config already exists at `{}`; refusing to overwrite",
-                config_path.display()
-            ))
+            .contains(
+                "error: config already exists at `~/.config/tpm/tpm.yaml`; refusing to overwrite"
+            )
     );
     assert_eq!(
         fs::read_to_string(&config_path).expect("config should remain readable"),
@@ -320,15 +306,11 @@ fn migrate_reports_skipped_source_files_when_root_config_has_no_direct_plugins()
     );
     assert_eq!(
         String::from_utf8(output.stderr).expect("stderr should be utf-8"),
-        format!(
-            concat!(
-                "error: no migratable tmux plugins were detected in `{}`\n",
-                "Skipped 1 source-file directive(s); multi-file tmux configs are not supported\n",
-                "Skipped source-file on line 1: {}\n",
-                "Run `tpm migrate --tmux-conf PATH` against a tmux config file that directly contains `@plugin` lines, or merge sourced plugin declarations into one file first\n",
-            ),
-            tmux_conf_path.display(),
-            sourced_conf_path.display(),
+        concat!(
+            "error: no migratable tmux plugins were detected in `~/.tmux.conf`\n",
+            "Skipped 1 source-file directive(s); multi-file tmux configs are not supported\n",
+            "Skipped source-file on line 1: ~/.config/tmux/plugins.conf\n",
+            "Run `tpm migrate --tmux-conf PATH` against a tmux config file that directly contains `@plugin` lines, or merge sourced plugin declarations into one file first\n",
         )
     );
 }
@@ -360,13 +342,10 @@ fn migrate_fails_loudly_on_inline_command_sequences_with_plugin_definitions() {
     );
     assert_eq!(
         String::from_utf8(output.stderr).expect("stderr should be utf-8"),
-        format!(
-            concat!(
-                "error: tmux config `{}` line 1: ",
-                "inline tmux command separators (`;`) are not supported during migration; ",
-                "move each `@plugin` or `source-file` command onto its own line\n",
-            ),
-            tmux_conf_path.display(),
+        concat!(
+            "error: tmux config `~/.tmux.conf` line 1: ",
+            "inline tmux command separators (`;`) are not supported during migration; ",
+            "move each `@plugin` or `source-file` command onto its own line\n",
         )
     );
 }

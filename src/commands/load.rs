@@ -14,6 +14,7 @@ use crate::{
     config::Config,
     error::{AppError, Result},
     plugin, tmux,
+    user_path::display_user_path,
 };
 
 const TMUX_PLUGIN_MANAGER_PATH: &str = "TMUX_PLUGIN_MANAGER_PATH";
@@ -128,11 +129,14 @@ fn load_plugin(
     let plugin_started = Instant::now();
     logger.log_line(format!(
         "plugin {name}: loading from {}",
-        install_dir.display()
+        display_user_path(install_dir)
     ));
 
     if !install_dir.exists() {
-        let detail = format!("plugin checkout is missing at {}", install_dir.display());
+        let detail = format!(
+            "plugin checkout is missing at {}",
+            display_user_path(install_dir)
+        );
         logger.log_plugin_failure(name, &detail, plugin_started.elapsed());
         return Err(detail);
     }
@@ -140,7 +144,7 @@ fn load_plugin(
     if !install_dir.is_dir() {
         let detail = format!(
             "expected plugin checkout directory at {}",
-            install_dir.display()
+            display_user_path(install_dir)
         );
         logger.log_plugin_failure(name, &detail, plugin_started.elapsed());
         return Err(detail);
@@ -168,7 +172,7 @@ fn load_plugin(
     for entrypoint in &entrypoints {
         logger.log_line(format!(
             "plugin {name}: discovered entrypoint {}",
-            entrypoint.display()
+            display_user_path(entrypoint)
         ));
     }
 
@@ -196,7 +200,7 @@ fn run_entrypoint(
     let entrypoint_started = Instant::now();
     logger.log_line(format!(
         "plugin {name}: running entrypoint {}",
-        entrypoint.display()
+        display_user_path(entrypoint)
     ));
 
     let output = match Command::new(entrypoint)
@@ -208,12 +212,12 @@ fn run_entrypoint(
         Err(source) => {
             let detail = format!(
                 "failed to execute entrypoint {}: {}",
-                entrypoint.display(),
+                display_user_path(entrypoint),
                 source
             );
             logger.log_line(format!(
                 "plugin {name}: entrypoint failed {} in {}: {}",
-                entrypoint.display(),
+                display_user_path(entrypoint),
                 format_duration(entrypoint_started.elapsed()),
                 detail
             ));
@@ -224,7 +228,7 @@ fn run_entrypoint(
     if output.status.success() {
         logger.log_line(format!(
             "plugin {name}: entrypoint succeeded {} in {}",
-            entrypoint.display(),
+            display_user_path(entrypoint),
             format_duration(entrypoint_started.elapsed())
         ));
         return Ok(());
@@ -243,12 +247,12 @@ fn run_entrypoint(
     if detail.is_empty() {
         let detail = format!(
             "entrypoint {} exited with status {}",
-            entrypoint.display(),
+            display_user_path(entrypoint),
             output.status
         );
         logger.log_line(format!(
             "plugin {name}: entrypoint failed {} in {}: {}",
-            entrypoint.display(),
+            display_user_path(entrypoint),
             format_duration(entrypoint_started.elapsed()),
             detail
         ));
@@ -256,13 +260,13 @@ fn run_entrypoint(
     } else {
         let detail = format!(
             "entrypoint {} exited with status {}: {}",
-            entrypoint.display(),
+            display_user_path(entrypoint),
             output.status,
             detail
         );
         logger.log_line(format!(
             "plugin {name}: entrypoint failed {} in {}: {}",
-            entrypoint.display(),
+            display_user_path(entrypoint),
             format_duration(entrypoint_started.elapsed()),
             detail
         ));
@@ -297,8 +301,8 @@ impl LoadLogger {
 
         self.log_line(format!("load started at unix-seconds {}", unix_timestamp()));
         self.log_line(format!("tmux server socket: {server_socket}"));
-        self.log_line(format!("config file: {}", config_file.display()));
-        self.log_line(format!("plugins dir: {}", plugins_dir.display()));
+        self.log_line(format!("config file: {}", display_user_path(config_file)));
+        self.log_line(format!("plugins dir: {}", display_user_path(plugins_dir)));
     }
 
     fn log_line(&mut self, message: impl AsRef<str>) {

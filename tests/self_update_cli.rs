@@ -103,6 +103,45 @@ fn self_update_reports_when_the_current_binary_is_already_latest() {
 }
 
 #[test]
+fn self_update_shortens_home_prefixed_executable_paths() {
+    let workspace = unique_temp_dir("self-update-home-path");
+    let releases_dir = workspace.join("releases");
+    let installed_binary = install_test_binary_at(&workspace.join("home/.local/bin/tpm"));
+    let current_version = binary_version(&installed_binary);
+
+    write_release_asset(
+        &releases_dir,
+        "test-target",
+        &current_version,
+        "same-release",
+    );
+
+    let output = run_binary_with_env(
+        &installed_binary,
+        &workspace,
+        ["self-update"],
+        [
+            (
+                "TPM_INSTALL_BASE_URL",
+                releases_dir
+                    .to_str()
+                    .expect("releases path should be utf-8"),
+            ),
+            ("TPM_SELF_UPDATE_TARGET", "test-target"),
+        ],
+    );
+
+    assert!(
+        output.status.success(),
+        "self-update should succeed: {output:?}"
+    );
+    assert_eq!(
+        String::from_utf8(output.stdout).expect("stdout should be utf-8"),
+        format!("Already up to date tpm {current_version} at ~/.local/bin/tpm\n")
+    );
+}
+
+#[test]
 fn self_update_keeps_the_existing_binary_when_checksum_verification_fails() {
     let workspace = unique_temp_dir("self-update-checksum");
     let releases_dir = workspace.join("releases");
@@ -191,13 +230,16 @@ fn self_update_does_not_downgrade_dotted_versions() {
 }
 
 fn install_test_binary(workspace: &Path) -> PathBuf {
-    let installed_binary = workspace.join("bin").join("tpm");
-    if let Some(parent) = installed_binary.parent() {
+    install_test_binary_at(&workspace.join("bin").join("tpm"))
+}
+
+fn install_test_binary_at(path: &Path) -> PathBuf {
+    if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).expect("binary directory should be created");
     }
-    fs::copy(env!("CARGO_BIN_EXE_tpm"), &installed_binary).expect("test binary should be copied");
-    set_executable(&installed_binary);
-    installed_binary
+    fs::copy(env!("CARGO_BIN_EXE_tpm"), path).expect("test binary should be copied");
+    set_executable(path);
+    path.to_path_buf()
 }
 
 fn binary_version(binary: &Path) -> String {

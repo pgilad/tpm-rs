@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::{config_file_path, install, resolved_paths, sync};
-use crate::{config::Config, error::Result};
+use crate::{config::Config, error::Result, user_path::display_user_path};
 
 pub fn run(
     config_override: Option<&Path>,
@@ -26,11 +26,15 @@ pub fn run(
     if created {
         println!(
             "Created {} and added {}",
-            config_path.display(),
+            display_user_path(&config_path),
             install_name
         );
     } else {
-        println!("Added {} to {}", install_name, config_path.display());
+        println!(
+            "Added {} to {}",
+            install_name,
+            display_user_path(&config_path)
+        );
     }
 
     if install_after_add {

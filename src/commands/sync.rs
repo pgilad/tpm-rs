@@ -12,6 +12,7 @@ use crate::{
     error::{AppError, Result},
     paths::{ResolvedPaths, normalize_lexically},
     plugin,
+    user_path::display_user_path,
 };
 
 const GIT_REMOTE: &str = "origin";
@@ -312,13 +313,16 @@ pub(crate) fn validate_managed_checkout(
 ) -> std::result::Result<(), CheckoutValidationError> {
     if !path.exists() {
         return Err(CheckoutValidationError {
-            detail: format!("plugin checkout is missing at {}", path.display()),
+            detail: format!("plugin checkout is missing at {}", display_user_path(path)),
         });
     }
 
     if !path.is_dir() {
         return Err(CheckoutValidationError {
-            detail: format!("expected plugin checkout directory at {}", path.display()),
+            detail: format!(
+                "expected plugin checkout directory at {}",
+                display_user_path(path)
+            ),
         });
     }
 
@@ -328,7 +332,7 @@ pub(crate) fn validate_managed_checkout(
             return Err(CheckoutValidationError {
                 detail: format!(
                     "plugin checkout is not a valid git work tree: {}",
-                    path.display()
+                    display_user_path(path)
                 ),
             });
         }
@@ -339,7 +343,7 @@ pub(crate) fn validate_managed_checkout(
         .map_err(|_| CheckoutValidationError {
             detail: format!(
                 "plugin checkout is missing the origin remote expected for managed plugins: {}",
-                path.display()
+                display_user_path(path)
             ),
         })?;
 
@@ -347,9 +351,9 @@ pub(crate) fn validate_managed_checkout(
         return Err(CheckoutValidationError {
             detail: format!(
                 "plugin checkout source does not match configured source at {} (expected {}, found {})",
-                path.display(),
-                expected_clone_source,
-                actual_clone_source
+                display_user_path(path),
+                display_local_source(expected_clone_source),
+                display_local_source(&actual_clone_source)
             ),
         });
     }
@@ -454,21 +458,36 @@ fn format_command(cwd: Option<&Path>, args: &[OsString]) -> String {
     let rendered = args.iter().map(shell_escape).collect::<Vec<_>>().join(" ");
 
     match cwd {
-        Some(path) if rendered.is_empty() => format!("git -C {}", path.display()),
-        Some(path) => format!("git -C {} {}", path.display(), rendered),
+        Some(path) if rendered.is_empty() => format!("git -C {}", display_user_path(path)),
+        Some(path) => format!("git -C {} {}", display_user_path(path), rendered),
         None if rendered.is_empty() => "git".to_string(),
         None => format!("git {rendered}"),
     }
 }
 
 fn shell_escape(value: &OsString) -> String {
-    let value = value.to_string_lossy();
+    let value_path = Path::new(value);
+    let value = if value_path.is_absolute() {
+        display_user_path(value_path).into()
+    } else {
+        value.to_string_lossy()
+    };
     if value.chars().all(|character| {
-        character.is_ascii_alphanumeric() || matches!(character, '/' | '-' | '_' | '.' | ':' | '=')
+        character.is_ascii_alphanumeric()
+            || matches!(character, '/' | '-' | '_' | '.' | ':' | '=' | '~')
     }) {
         value.into_owned()
     } else {
         format!("{value:?}")
+    }
+}
+
+fn display_local_source(source: &str) -> String {
+    let path = Path::new(source);
+    if path.is_absolute() {
+        display_user_path(path)
+    } else {
+        source.to_string()
     }
 }
 
