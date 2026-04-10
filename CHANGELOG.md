@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.04.10-7
+
+- Improve install script (23a3c67)
+- Improve migrate, install and parse (3c7f02f)
+
 ## 2026.04.09-4
 
 - init (914cbdf)
