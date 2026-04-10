@@ -268,6 +268,105 @@ esac
 }
 
 #[test]
+fn installer_prints_summary_and_shell_specific_path_hint() {
+    let workspace = unique_temp_dir("installer-output");
+    let releases_dir = workspace.join("releases");
+    let install_dir = workspace.join("bin");
+    let target = "x86_64-unknown-linux-gnu";
+
+    create_release_asset(
+        &releases_dir,
+        "v1.0.0",
+        target,
+        &format!("tpm-{target}"),
+        "installed",
+    );
+
+    let output = run_installer(
+        &install_script_path(),
+        &workspace,
+        [
+            "--dir",
+            install_dir.to_str().expect("install dir should be utf-8"),
+            "--version",
+            "v1.0.0",
+            "--target",
+            target,
+        ],
+        envs_with_path(
+            &workspace,
+            &releases_dir,
+            env::var_os("PATH").expect("PATH should be set"),
+            &[("SHELL", "/bin/zsh")],
+        ),
+    );
+
+    assert!(
+        output.status.success(),
+        "install should succeed: {}",
+        describe_output(&output)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains("tpm installer"),
+        "stdout should include the installer heading: {stdout}"
+    );
+    assert!(
+        stdout.contains("version: v1.0.0"),
+        "stdout should include the selected version: {stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("target: {target}")),
+        "stdout should include the selected target: {stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("install: {}", install_dir.join("tpm").display())),
+        "stdout should include the install path: {stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("Downloading tpm for {target}")),
+        "stdout should include the download step: {stdout}"
+    );
+    assert!(
+        stdout.contains("==> Verifying checksum"),
+        "stdout should include the checksum step: {stdout}"
+    );
+    assert!(
+        stdout.contains("==> Installing tpm"),
+        "stdout should include the install step: {stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("installed: {}", install_dir.join("tpm").display())),
+        "stdout should include the success line: {stdout}"
+    );
+    assert!(
+        stdout.contains(&format!(
+            "Run: {} --version",
+            install_dir.join("tpm").display()
+        )),
+        "stdout should include the post-install check command: {stdout}"
+    );
+    assert!(
+        stdout.contains("Add this to ~/.zshrc:"),
+        "stdout should include a zsh-specific PATH hint: {stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("export PATH=\"{}:$PATH\"", install_dir.display())),
+        "stdout should include the PATH export snippet: {stdout}"
+    );
+
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
+    assert!(
+        stderr.contains(&format!(
+            "warning: {} is not on PATH",
+            install_dir.display()
+        )),
+        "stderr should include the PATH warning: {stderr}"
+    );
+}
+
+#[test]
 fn installer_keeps_the_existing_binary_when_archive_layout_is_unexpected() {
     let workspace = unique_temp_dir("installer-atomic");
     let releases_dir = workspace.join("releases");

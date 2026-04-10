@@ -29,16 +29,45 @@ Environment:
 EOF
 }
 
+if [ -t 1 ] && [ "${NO_COLOR:-}" = "" ] && [ "${TERM:-}" != "dumb" ]; then
+  ESC="$(printf '\033')"
+  BOLD="${ESC}[1m"
+  GREEN="${ESC}[32m"
+  YELLOW="${ESC}[33m"
+  RED="${ESC}[31m"
+  CYAN="${ESC}[36m"
+  RESET="${ESC}[0m"
+else
+  BOLD=""
+  GREEN=""
+  YELLOW=""
+  RED=""
+  CYAN=""
+  RESET=""
+fi
+
 say() {
   printf '%s\n' "$*"
 }
 
+detail() {
+  printf '  %s\n' "$*"
+}
+
+section() {
+  printf '%s %s\n' "${CYAN}==>${RESET}" "$*"
+}
+
+success() {
+  printf '%s %s\n' "${GREEN}installed:${RESET}" "$*"
+}
+
 warn() {
-  printf 'warning: %s\n' "$*" >&2
+  printf '%s %s\n' "${YELLOW}warning:${RESET}" "$*" >&2
 }
 
 fail() {
-  printf 'error: %s\n' "$*" >&2
+  printf '%s %s\n' "${RED}error:${RESET}" "$*" >&2
   exit 1
 }
 
@@ -62,13 +91,17 @@ download() {
   destination="$2"
 
   if have_cmd curl; then
-    curl -fsSL "$url" -o "$destination"
-    return
+    if curl -fsSL "$url" -o "$destination"; then
+      return
+    fi
+    fail "failed to download ${url} with curl"
   fi
 
   if have_cmd wget; then
-    wget -qO "$destination" "$url"
-    return
+    if wget -qO "$destination" "$url"; then
+      return
+    fi
+    fail "failed to download ${url} with wget"
   fi
 
   fail "missing required downloader: curl or wget"
@@ -217,6 +250,69 @@ is_dir_on_path() {
   esac
 }
 
+detect_shell_name() {
+  shell_name="${SHELL:-}"
+  shell_name="${shell_name##*/}"
+
+  case "$shell_name" in
+    bash|zsh|fish)
+      printf '%s\n' "$shell_name"
+      ;;
+    *)
+      printf '%s\n' 'sh'
+      ;;
+  esac
+}
+
+shell_rc_file() {
+  case "$1" in
+    bash)
+      printf '%s\n' '~/.bashrc'
+      ;;
+    zsh)
+      printf '%s\n' '~/.zshrc'
+      ;;
+    fish)
+      printf '%s\n' '~/.config/fish/config.fish'
+      ;;
+    *)
+      printf '%s\n' '~/.profile'
+      ;;
+  esac
+}
+
+print_install_summary() {
+  say "${BOLD}tpm installer${RESET}"
+  detail "version: ${INSTALL_VERSION}"
+  detail "target: ${TARGET}"
+  detail "install: ${install_path}"
+  say ""
+}
+
+post_install_command() {
+  if is_dir_on_path "$INSTALL_DIR"; then
+    printf '%s\n' 'tpm --version'
+    return
+  fi
+
+  printf '%s\n' "${install_path} --version"
+}
+
+print_path_hint() {
+  shell_name="$(detect_shell_name)"
+  rc_file="$(shell_rc_file "$shell_name")"
+
+  say "Add this to ${rc_file}:"
+  case "$shell_name" in
+    fish)
+      say "  fish_add_path ${INSTALL_DIR}"
+      ;;
+    *)
+      say "  export PATH=\"${INSTALL_DIR}:\$PATH\""
+      ;;
+  esac
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --version)
@@ -266,6 +362,7 @@ download_prefix="$(release_download_prefix)"
 archive_name="tpm-${TARGET}.tar.gz"
 archive_url="${download_prefix}/${archive_name}"
 checksum_url="${archive_url}.sha256"
+install_path="${INSTALL_DIR}/tpm"
 
 tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/tpm-install.XXXXXX")"
 install_tmp_path=""
@@ -280,17 +377,21 @@ trap cleanup EXIT INT TERM HUP
 archive_path="${tmpdir}/${archive_name}"
 checksum_path="${archive_path}.sha256"
 
-say "Downloading tpm for ${TARGET} from ${archive_url}"
+print_install_summary
+
+section "Downloading tpm for ${TARGET}"
+detail "from: ${archive_url}"
 download "$archive_url" "$archive_path"
+section "Verifying checksum"
 verify_checksum "$archive_path" "$checksum_url" "$checksum_path"
 
+section "Installing tpm"
 tar -xzf "$archive_path" -C "$tmpdir"
 
 binary_path="${tmpdir}/tpm-${TARGET}/tpm"
 [ -f "$binary_path" ] || fail "downloaded archive did not contain the expected tpm-${TARGET}/tpm path"
 
 mkdir -p "$INSTALL_DIR"
-install_path="${INSTALL_DIR}/tpm"
 install_tmp_path="${INSTALL_DIR}/tpm.tmp"
 rm -f "$install_tmp_path"
 cp "$binary_path" "$install_tmp_path"
@@ -298,11 +399,11 @@ chmod 755 "$install_tmp_path"
 mv -f "$install_tmp_path" "$install_path"
 install_tmp_path=""
 
-say "Installed tpm to ${install_path}"
+success "${install_path}"
+detail "Run: $(post_install_command)"
 
 if ! is_dir_on_path "$INSTALL_DIR"; then
+  say ""
   warn "${INSTALL_DIR} is not on PATH"
-  say "Add it to your shell startup file, then restart your shell."
-  say "For sh/bash/zsh, this works:"
-  say "  export PATH=\"${INSTALL_DIR}:\$PATH\""
+  print_path_hint
 fi
