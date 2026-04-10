@@ -65,6 +65,7 @@ If none of those files exist, the command fails and prints the checked paths.
 - modify `tmux.conf`
 - overwrite an existing `tpm.yaml`
 - follow or merge `source-file` includes
+- parse inline tmux command sequences that use `;` or `\;`; those fail loudly so plugin declarations are not skipped silently
 
 When it sees `source-file`, it skips that line and warns at the end that
 multi-file tmux configs are not supported by the migration command. The summary
@@ -77,7 +78,7 @@ The migration command understands these plugin source forms:
 
 - GitHub shorthand: `owner/repo`
 - GitHub shorthand with a suffix: `owner/repo#branch`
-- GitHub shorthand with a version-like suffix: `owner/repo#v0.3.6`
+- GitHub shorthand with a version-like suffix that starts with `v` and then a digit: `owner/repo#v0.3.6`
 - full Git URLs
 - SSH Git URLs
 - scp-style Git URLs such as `git@github.com:user/plugin`
@@ -100,7 +101,7 @@ set -g @plugin './plugins/local-plugin'
 How suffixes map into `tpm.yaml`:
 
 - `#branch-name` becomes `branch: branch-name`
-- `#v...` becomes `ref: v...`
+- `#v<digit>...` becomes `ref: v...`
 - a 7-40 character hexadecimal suffix becomes `ref: <sha>`
 
 Example conversion:
@@ -146,6 +147,9 @@ The migration command is intentionally conservative.
 
 - It reads only one file. `source-file` is skipped and only reported in the
   final summary.
+- It expects plugin declarations and `source-file` directives to appear one per
+  tmux command. Inline command sequences that use `;` or `\;` are rejected so
+  migration does not silently miss later commands on the same line.
 - Plugins declared in sourced files will not appear in the generated
   `tpm.yaml`.
 - Conditional config, shell-generated config, or dynamically built plugin lists

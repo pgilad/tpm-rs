@@ -187,25 +187,42 @@ fn parse_tmux_config(path: &Path) -> Result<ParsedTmuxConfig> {
 
     let mut parsed = ParsedTmuxConfig::default();
     for (index, line) in raw.lines().enumerate() {
+        let line_number = index + 1;
         let tokens = tokenize_tmux_line(line).map_err(|message| AppError::Migration {
             message: format!(
                 "tmux config `{}` line {}: {message}",
                 path.display(),
-                index + 1
+                line_number
             ),
         })?;
-        if tokens.is_empty() {
+        let segments = command_segments(&tokens);
+        if segments.is_empty() {
             continue;
         }
 
-        if is_source_file_command(&tokens) {
+        if segments.len() > 1
+            && segments.iter().any(|segment| {
+                is_source_file_command(segment) || plugin_source_from_tokens(segment).is_some()
+            })
+        {
+            return Err(AppError::Migration {
+                message: format!(
+                    "tmux config `{}` line {}: inline tmux command separators (`;`) are not supported during migration; move each `@plugin` or `source-file` command onto its own line",
+                    path.display(),
+                    line_number,
+                ),
+            });
+        }
+
+        let tokens = segments[0];
+        if is_source_file_command(tokens) {
             parsed
                 .skipped_source_files
-                .push(skipped_source_file(&tokens, &base_dir, index + 1));
+                .push(skipped_source_file(tokens, &base_dir, line_number));
             continue;
         }
 
-        let Some(source) = plugin_source_from_tokens(&tokens) else {
+        let Some(source) = plugin_source_from_tokens(tokens) else {
             continue;
         };
 
@@ -230,9 +247,22 @@ fn tokenize_tmux_line(line: &str) -> std::result::Result<Vec<String>, String> {
                 '#' if current.is_empty() => break,
                 '\'' => state = TokenizeState::SingleQuoted,
                 '"' => state = TokenizeState::DoubleQuoted,
+                ';' => {
+                    if !current.is_empty() {
+                        tokens.push(std::mem::take(&mut current));
+                    }
+                    tokens.push(";".to_string());
+                }
                 '\\' => {
                     if let Some(next) = chars.next() {
-                        current.push(next);
+                        if next == ';' {
+                            if !current.is_empty() {
+                                tokens.push(std::mem::take(&mut current));
+                            }
+                            tokens.push(";".to_string());
+                        } else {
+                            current.push(next);
+                        }
                     }
                 }
                 character if character.is_whitespace() => {
@@ -270,6 +300,26 @@ fn tokenize_tmux_line(line: &str) -> std::result::Result<Vec<String>, String> {
     }
 
     Ok(tokens)
+}
+
+fn command_segments(tokens: &[String]) -> Vec<&[String]> {
+    let mut segments = Vec::new();
+    let mut start = 0;
+
+    for (index, token) in tokens.iter().enumerate() {
+        if token == ";" {
+            if start < index {
+                segments.push(&tokens[start..index]);
+            }
+            start = index + 1;
+        }
+    }
+
+    if start < tokens.len() {
+        segments.push(&tokens[start..]);
+    }
+
+    segments
 }
 
 fn is_source_file_command(tokens: &[String]) -> bool {
@@ -379,7 +429,10 @@ fn split_legacy_source_fragment(source: &str) -> (String, Option<String>, Option
 }
 
 fn looks_like_pinned_reference(fragment: &str) -> bool {
-    (fragment.starts_with('v') && fragment.len() > 1)
+    fragment
+        .strip_prefix('v')
+        .and_then(|suffix| suffix.chars().next())
+        .is_some_and(|character| character.is_ascii_digit())
         || (7..=40).contains(&fragment.len())
             && fragment
                 .chars()

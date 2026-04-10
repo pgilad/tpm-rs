@@ -131,7 +131,7 @@ fn migrate_reads_home_dot_tmux_conf() {
 }
 
 #[test]
-fn migrate_treats_v_prefixed_fragment_as_ref() {
+fn migrate_treats_v_prefixed_numeric_fragment_as_ref() {
     let workspace = unique_temp_dir("migrate-v-ref");
     let home_dir = workspace.join("home");
     let tmux_conf_path = home_dir.join(".tmux");
@@ -159,6 +159,39 @@ fn migrate_treats_v_prefixed_fragment_as_ref() {
             "plugins:\n",
             "- source: catppuccin/tmux\n",
             "  ref: v0.3.6\n",
+        )
+    );
+}
+
+#[test]
+fn migrate_treats_v_prefixed_non_numeric_fragment_as_branch() {
+    let workspace = unique_temp_dir("migrate-v-branch");
+    let home_dir = workspace.join("home");
+    let tmux_conf_path = home_dir.join(".tmux");
+    let config_path = home_dir.join(".config").join("tpm").join("tpm.yaml");
+
+    write_file(&tmux_conf_path, "set -g @plugin 'catppuccin/tmux#vnext'\n");
+
+    let output = run_tpm_with_env(
+        &workspace,
+        ["migrate"],
+        vec![(
+            "XDG_CONFIG_HOME".to_string(),
+            home_dir.join(".config").display().to_string(),
+        )],
+    );
+
+    assert!(
+        output.status.success(),
+        "migrate should succeed: {output:?}"
+    );
+    assert_eq!(
+        fs::read_to_string(&config_path).expect("config should be readable"),
+        concat!(
+            "version: 1\n",
+            "plugins:\n",
+            "- source: catppuccin/tmux\n",
+            "  branch: vnext\n",
         )
     );
 }
@@ -296,6 +329,44 @@ fn migrate_reports_skipped_source_files_when_root_config_has_no_direct_plugins()
             ),
             tmux_conf_path.display(),
             sourced_conf_path.display(),
+        )
+    );
+}
+
+#[test]
+fn migrate_fails_loudly_on_inline_command_sequences_with_plugin_definitions() {
+    let workspace = unique_temp_dir("migrate-inline-plugin-sequence");
+    let home_dir = workspace.join("home");
+    let tmux_conf_path = home_dir.join(".tmux.conf");
+
+    write_file(
+        &tmux_conf_path,
+        "set -g @plugin 'tmux-plugins/tmux-sensible' \\; set -g @plugin 'tmux-plugins/tmux-yank'\n",
+    );
+
+    let output = run_tpm_with_env(
+        &workspace,
+        ["migrate"],
+        vec![(
+            "XDG_CONFIG_HOME".to_string(),
+            home_dir.join(".config").display().to_string(),
+        )],
+    );
+
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8(output.stdout).expect("stdout should be utf-8"),
+        ""
+    );
+    assert_eq!(
+        String::from_utf8(output.stderr).expect("stderr should be utf-8"),
+        format!(
+            concat!(
+                "error: tmux config `{}` line 1: ",
+                "inline tmux command separators (`;`) are not supported during migration; ",
+                "move each `@plugin` or `source-file` command onto its own line\n",
+            ),
+            tmux_conf_path.display(),
         )
     );
 }

@@ -367,6 +367,59 @@ fn installer_prints_summary_and_shell_specific_path_hint() {
 }
 
 #[test]
+fn installer_requires_a_checksum_tool() {
+    let workspace = unique_temp_dir("installer-checksum-required");
+    let fake_bin = workspace.join("fake-bin");
+    let install_dir = workspace.join("bin");
+    let target = "x86_64-unknown-linux-gnu";
+
+    fs::create_dir_all(&install_dir).expect("install dir should be created");
+    write_file(&install_dir.join("tpm"), "existing\n");
+    mirror_commands_into(
+        &fake_bin,
+        &[
+            "awk", "chmod", "cp", "mkdir", "mktemp", "mv", "rm", "sh", "tar", "tr", "uname",
+        ],
+    );
+
+    let output = run_installer(
+        &install_script_path(),
+        &workspace,
+        [
+            "--dir",
+            install_dir.to_str().expect("install dir should be utf-8"),
+            "--target",
+            target,
+        ],
+        envs_with_path(
+            &workspace,
+            &workspace.join("unused-releases"),
+            fake_bin.as_os_str().to_os_string(),
+            &[],
+        ),
+    );
+
+    assert!(
+        !output.status.success(),
+        "install should fail without a checksum tool: {}",
+        describe_output(&output)
+    );
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
+    assert!(
+        stderr.contains("missing required checksum tool: shasum or sha256sum"),
+        "stderr should mention the missing checksum tool: {stderr}"
+    );
+    assert_eq!(
+        fs::read_to_string(install_dir.join("tpm")).expect("existing tpm should be readable"),
+        "existing\n"
+    );
+    assert!(
+        !install_dir.join("tpm.tmp").exists(),
+        "temporary install path should not be created on early failure"
+    );
+}
+
+#[test]
 fn installer_keeps_the_existing_binary_when_archive_layout_is_unexpected() {
     let workspace = unique_temp_dir("installer-atomic");
     let releases_dir = workspace.join("releases");
@@ -539,6 +592,46 @@ fn checksum_command() -> Command {
     }
 
     panic!("expected shasum or sha256sum to be available");
+}
+
+fn mirror_commands_into(directory: &Path, commands: &[&str]) {
+    fs::create_dir_all(directory).expect("fake bin directory should be created");
+
+    for command in commands {
+        let target = absolute_command_path(command);
+        write_executable_script(
+            &directory.join(command),
+            &format!(
+                "#!/bin/sh\nexec {:?} \"$@\"\n",
+                target.display().to_string()
+            ),
+        );
+    }
+}
+
+fn absolute_command_path(command: &str) -> PathBuf {
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(format!("command -v {command}"))
+        .output()
+        .expect("shell should resolve command paths");
+
+    assert!(
+        output.status.success(),
+        "expected `{command}` to be available: {}",
+        describe_output(&output)
+    );
+
+    let path = String::from_utf8(output.stdout)
+        .expect("resolved command path should be utf-8")
+        .trim()
+        .to_string();
+    assert!(
+        !path.is_empty(),
+        "expected a non-empty resolved path for `{command}`"
+    );
+
+    PathBuf::from(path)
 }
 
 fn command_exists(command: &str) -> bool {

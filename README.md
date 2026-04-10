@@ -254,7 +254,8 @@ Config rewrites are deterministic, but commands that rewrite `tpm.yaml` do not p
 ## Automation-Friendly Output
 
 - `tpm paths --json`, `tpm list --json`, and `tpm doctor --json` emit pretty-printed JSON.
-- `tpm install` and `tpm update` emit stable line-oriented stdout that is suitable for scripts.
+- `tpm install` and `tpm update` emit stable line-oriented stdout that is suitable for scripts when stdout is not a terminal.
+- Interactive `tpm install` now shows live per-plugin progress and a final summary on the terminal stream instead of waiting to print everything at the end.
 - `tpm add` emits the normal `add` line followed by the `install` line for the added plugin.
 - `tpm add --skip-install` only rewrites `tpm.yaml`.
 - `tpm self-update` emits stable line-oriented stdout for update and no-op outcomes.
@@ -273,6 +274,17 @@ Kept pinned tmux-continuum at ref v1.0.0 in /path/to/plugins/tmux-continuum
 Realigned pinned tmux-continuum to ref v1.0.0 in /path/to/plugins/tmux-continuum
 Updated tpm from 2026.04.03-12 to 2026.04.04-1 at /path/to/tpm
 Already up to date tpm 2026.04.04-1 at /path/to/tpm
+```
+
+Typical interactive `install` output:
+
+```text
+Installing 3 plugins into ~/.local/share/tpm/plugins
+  [1/3] tmux-plugins/tmux-sensible... installed
+  [2/3] tmux-plugins/tmux-resurrect... already installed
+  [3/3] tmux-plugins/tmux-continuum... failed
+         configured branch `stable` is not available as a remote branch
+Done in 1.2s. 1 installed, 1 already installed, 1 failed.
 ```
 
 Typical `load` failure output:

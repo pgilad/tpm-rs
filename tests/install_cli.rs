@@ -86,6 +86,10 @@ fn install_clones_configured_plugins_and_skips_existing_checkouts() {
         )
     );
     assert_eq!(
+        String::from_utf8(output.stderr).expect("stderr should be utf-8"),
+        ""
+    );
+    assert_eq!(
         fs::read_to_string(plugins_dir.join("tmux-sensible").join("plugin.txt"))
             .expect("installed file should be readable"),
         "v1\n"
@@ -110,6 +114,10 @@ fn install_clones_configured_plugins_and_skips_existing_checkouts() {
             "Skipped already installed tmux-sensible at {}\n",
             plugins_dir.join("tmux-sensible").display()
         )
+    );
+    assert_eq!(
+        String::from_utf8(output.stderr).expect("stderr should be utf-8"),
+        ""
     );
 }
 
@@ -164,6 +172,10 @@ fn install_checks_out_configured_branch() {
     assert!(
         output.status.success(),
         "install should succeed: {output:?}"
+    );
+    assert_eq!(
+        String::from_utf8(output.stderr).expect("stderr should be utf-8"),
+        ""
     );
     assert_eq!(
         fs::read_to_string(plugins_dir.join("tmux-sensible").join("plugin.txt"))
@@ -323,6 +335,10 @@ fn install_preserves_plugin_output_order_for_mixed_outcomes() {
             first_checkout.display(),
             plugins_dir.join("tmux-second").display(),
         )
+    );
+    assert_eq!(
+        String::from_utf8(output.stderr).expect("stderr should be utf-8"),
+        ""
     );
 }
 

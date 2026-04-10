@@ -107,6 +107,14 @@ download() {
   fail "missing required downloader: curl or wget"
 }
 
+need_checksum_tool() {
+  if have_cmd shasum || have_cmd sha256sum; then
+    return
+  fi
+
+  fail "missing required checksum tool: shasum or sha256sum"
+}
+
 checksum_file() {
   file_path="$1"
 
@@ -120,7 +128,7 @@ checksum_file() {
     return
   fi
 
-  return 1
+  fail "missing required checksum tool: shasum or sha256sum"
 }
 
 verify_checksum() {
@@ -128,10 +136,7 @@ verify_checksum() {
   checksum_url="$2"
   checksum_path="$3"
 
-  if ! checksum="$(checksum_file "$archive_path")"; then
-    warn "no SHA-256 tool found; skipping checksum verification"
-    return
-  fi
+  checksum="$(checksum_file "$archive_path")"
 
   download "$checksum_url" "$checksum_path"
 
@@ -353,6 +358,7 @@ need_cmd rm
 need_cmd tar
 need_cmd tr
 need_cmd uname
+need_checksum_tool
 
 if [ -z "$TARGET" ]; then
   TARGET="$(detect_target)"
