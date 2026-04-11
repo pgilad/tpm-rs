@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.04.11-9
+
+- Shorten home paths in CLI output (f0eed75)
+
 ## 2026.04.10-8
 
 - Update actions (b50c909)
