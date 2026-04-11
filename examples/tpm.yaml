@@ -1,13 +1,33 @@
-# Converted from ~/.config/tmux/tmux.conf.
-# The legacy `pgilad/tpm` manager entry is omitted; replace its tmux bootstrap with `run-shell "tpm load"`.
 version: 1
 plugins:
+  # GitHub shorthand: `owner/repo` tracks the remote default branch.
   - source: pgilad/tmux-sensible
   - source: pgilad/tmux-resurrect
   - source: pgilad/tmux-continuum
   - source: pgilad/tmux-fzf
-  - source: tmux-plugins/tmux-yank
-  - source: fcsonline/tmux-thumbs
+
+  # Full HTTPS Git URL.
+  - source: https://github.com/tmux-plugins/tmux-yank.git
+
+  # SSH Git URL.
+  - source: git@github.com:fcsonline/tmux-thumbs.git
+
+  # Track an explicit remote branch.
   - source: omerxx/tmux-sessionx
+    branch: main
+
+  # Pin a tag or commit SHA with `ref`.
   - source: catppuccin/tmux
     ref: v2.1.3
+
+  # Full URL from another Git hosting provider. Disabled so the placeholder is not installed by default.
+  - source: https://codeberg.org/pgilad/tmux-thumbs.git
+    enabled: false
+
+  # Relative local plugin path. Relative sources resolve from the directory containing this file.
+  - source: ../local-tmux-plugin
+    enabled: false
+
+  # Absolute local plugin path.
+  - source: /opt/tmux-plugin
+    enabled: false
