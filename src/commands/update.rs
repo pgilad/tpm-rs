@@ -23,7 +23,7 @@ struct UpdateReport {
     failed_count: usize,
 }
 
-enum UpdateOutcome {
+pub(crate) enum UpdateOutcome {
     Updated(std::path::PathBuf),
     AlreadyCurrent(std::path::PathBuf),
     Pinned(std::path::PathBuf, String),
@@ -223,7 +223,7 @@ pub(crate) fn run_plugins(paths: &ResolvedPaths, plugins: &[SyncPlugin]) -> Resu
     }
 }
 
-fn update_plugin(plugin: &SyncPlugin) -> std::result::Result<UpdateOutcome, String> {
+pub(crate) fn update_plugin(plugin: &SyncPlugin) -> std::result::Result<UpdateOutcome, String> {
     sync::validate_managed_checkout(&plugin.install_dir, &plugin.clone_source)
         .map_err(|error| error.to_string())?;
 

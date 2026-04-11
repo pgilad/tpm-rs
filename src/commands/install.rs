@@ -22,7 +22,7 @@ struct InstallReport {
     failed_count: usize,
 }
 
-enum InstallOutcome {
+pub(crate) enum InstallOutcome {
     Installed(std::path::PathBuf),
     AlreadyInstalled(std::path::PathBuf),
 }
@@ -200,7 +200,7 @@ pub(crate) fn run_plugins(paths: &ResolvedPaths, plugins: &[SyncPlugin]) -> Resu
     }
 }
 
-fn install_plugin(plugin: &SyncPlugin) -> std::result::Result<InstallOutcome, String> {
+pub(crate) fn install_plugin(plugin: &SyncPlugin) -> std::result::Result<InstallOutcome, String> {
     if plugin.install_dir.exists() {
         sync::validate_managed_checkout(&plugin.install_dir, &plugin.clone_source)
             .map(|()| InstallOutcome::AlreadyInstalled(plugin.install_dir.clone()))

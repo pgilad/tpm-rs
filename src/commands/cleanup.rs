@@ -41,13 +41,16 @@ pub fn run(config_override: Option<&Path>, plugins_override: Option<&Path>) -> R
 }
 
 #[derive(Debug, Default)]
-struct CleanupReport {
-    removed: Vec<PathBuf>,
-    preserved: Vec<PathBuf>,
-    failed: Vec<(PathBuf, io::Error)>,
+pub(crate) struct CleanupReport {
+    pub(crate) removed: Vec<PathBuf>,
+    pub(crate) preserved: Vec<PathBuf>,
+    pub(crate) failed: Vec<(PathBuf, io::Error)>,
 }
 
-fn cleanup_plugins_dir(plugins_dir: &Path, declared: &BTreeSet<PathBuf>) -> Result<CleanupReport> {
+pub(crate) fn cleanup_plugins_dir(
+    plugins_dir: &Path,
+    declared: &BTreeSet<PathBuf>,
+) -> Result<CleanupReport> {
     if !plugins_dir.exists() {
         return Ok(CleanupReport::default());
     }

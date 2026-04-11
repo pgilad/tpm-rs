@@ -43,6 +43,8 @@ pub enum Command {
         #[arg(value_name = "PLUGIN")]
         plugins: Vec<String>,
     },
+    /// Clean up stale directories, install missing plugins, and update existing ones efficiently
+    Sync,
     /// Update the tpm CLI in place from the latest release
     #[command(name = "self-update")]
     SelfUpdate,

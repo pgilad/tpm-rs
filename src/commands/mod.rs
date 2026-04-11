@@ -10,6 +10,7 @@ mod progress;
 mod remove;
 mod self_update;
 mod sync;
+mod sync_cmd;
 mod update;
 
 use std::env;
@@ -29,6 +30,7 @@ pub fn run(cli: Cli) -> Result<()> {
         Command::Update { plugins } => {
             update::run(cli.config.as_deref(), cli.plugins_dir.as_deref(), &plugins)
         }
+        Command::Sync => sync_cmd::run(cli.config.as_deref(), cli.plugins_dir.as_deref()),
         Command::SelfUpdate => self_update::run(),
         Command::Cleanup => cleanup::run(cli.config.as_deref(), cli.plugins_dir.as_deref()),
         Command::List { json } => {

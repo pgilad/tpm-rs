@@ -116,6 +116,7 @@ Common follow-up workflows:
 ```bash
 tpm add tmux-plugins/tmux-yank
 tpm update
+tpm sync
 tpm self-update
 tpm remove tmux-plugins/tmux-yank
 tpm cleanup
@@ -136,6 +137,7 @@ bind M-u run-shell "tpm cleanup"
 | `load` | Run enabled installed plugin entrypoints inside tmux |
 | `install` | Install configured plugins from `tpm.yaml` |
 | `update [plugin...]` | Update installed plugins |
+| `sync` | Clean up stale plugin directories, install missing plugins, and update existing ones efficiently |
 | `self-update` | Update the installed `tpm` binary from the latest release |
 | `cleanup` | Remove undeclared plugin directories |
 | `list [--json]` | List configured plugins and installation state |
@@ -223,14 +225,14 @@ Config rewrites are deterministic, but commands that rewrite `tpm.yaml` do not p
 ## Automation-Friendly Output
 
 - `tpm paths --json`, `tpm list --json`, and `tpm doctor --json` emit pretty-printed JSON.
-- `tpm install` and `tpm update` emit stable line-oriented stdout that is suitable for scripts when stdout is not a terminal.
+- `tpm install`, `tpm update`, and `tpm sync` emit stable line-oriented stdout that is suitable for scripts when stdout is not a terminal.
 - Interactive `tpm install` now shows live per-plugin progress and a final summary on the terminal stream instead of waiting to print everything at the end.
 - `tpm add` emits the normal `add` line followed by the `install` line for the added plugin.
 - `tpm add --skip-install` only rewrites `tpm.yaml`.
 - `tpm self-update` emits stable line-oriented stdout for update and no-op outcomes.
 - `tpm load` stays silent on success.
 - When `tpm load` runs inside tmux, it overwrites a per-server log file at `${XDG_STATE_HOME:-$HOME/.local/state}/tpm/load-<sha256(socket-path)>.log` with plugin discovery, load events, and timing.
-- `tpm install`, `tpm update`, and `tpm load` continue processing later selected plugins after an individual plugin failure, then exit with code `1` after printing a final summary line.
+- `tpm install`, `tpm update`, `tpm sync`, and `tpm load` continue processing later selected plugins after an individual plugin failure, then exit with code `1` after printing a final summary line.
 
 Typical `install` and `update` output:
 
