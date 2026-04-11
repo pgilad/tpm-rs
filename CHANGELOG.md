@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.04.11-11
+
+- Use colors in various cmd outputs (bd547e3)
+- Colored output for rest of cmds (0c53966)
+
 ## 2026.04.11-10
 
 - Improve example tpm.yaml (fbed530)
