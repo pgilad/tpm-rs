@@ -234,6 +234,18 @@ Config rewrites are deterministic, but commands that rewrite `tpm.yaml` do not p
 - When `tpm load` runs inside tmux, it overwrites a per-server log file at `${XDG_STATE_HOME:-$HOME/.local/state}/tpm/load-<sha256(socket-path)>.log` with plugin discovery, load events, and timing.
 - `tpm install`, `tpm update`, `tpm sync`, and `tpm load` continue processing later selected plugins after an individual plugin failure, then exit with code `1` after printing a final summary line.
 
+## Color Output
+
+`tpm` only uses ANSI colors for human-oriented terminal output. Machine-oriented output such as `--json` stays uncolored.
+
+Color can be disabled with any of these standard environment settings:
+
+- `NO_COLOR=1` disables color output. This takes precedence over other color settings.
+- `CLICOLOR=0` disables color output for terminal rendering.
+- `TERM=dumb` disables color output.
+
+You can also force color output with `CLICOLOR_FORCE=1`.
+
 Typical `install` and `update` output:
 
 ```text

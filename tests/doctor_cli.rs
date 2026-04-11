@@ -7,6 +7,9 @@ use support::{
     set_executable, unique_temp_dir, write_file,
 };
 
+#[cfg(unix)]
+use support::run_tpm_in_pty_with_env;
+
 #[test]
 fn doctor_missing_config_prints_getting_started_guide() {
     let workspace = unique_temp_dir("doctor-missing-config");
@@ -175,6 +178,67 @@ fn doctor_reports_checkout_inspection_failures_without_aborting() {
         String::from_utf8(output.stderr).expect("stderr should be utf-8"),
         ""
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn doctor_colorizes_human_output_in_a_terminal() {
+    let workspace = unique_temp_dir("doctor-color-terminal");
+    let config_path = workspace.join("config").join("tpm.yaml");
+    let bin_dir = workspace.join("bin");
+
+    write_config(&config_path, "version: 1\nplugins: []\n");
+    write_fake_tmux(&bin_dir);
+
+    let output = run_tpm_in_pty_with_env(
+        &workspace,
+        [
+            "--config",
+            config_path.to_str().expect("config path should be utf-8"),
+            "doctor",
+        ],
+        vec![
+            ("PATH".to_string(), prepend_path(&bin_dir)),
+            ("TERM".to_string(), "xterm-256color".to_string()),
+        ],
+    );
+
+    assert!(output.status.success(), "doctor should succeed: {output:?}");
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("\u{1b}[92mPASS\u{1b}[0m config_file"));
+    assert!(stdout.contains("\u{1b}[92mDoctor completed without failing checks\u{1b}[0m"));
+}
+
+#[cfg(unix)]
+#[test]
+fn doctor_disables_color_when_no_color_is_set() {
+    let workspace = unique_temp_dir("doctor-no-color-terminal");
+    let config_path = workspace.join("config").join("tpm.yaml");
+    let bin_dir = workspace.join("bin");
+
+    write_config(&config_path, "version: 1\nplugins: []\n");
+    write_fake_tmux(&bin_dir);
+
+    let output = run_tpm_in_pty_with_env(
+        &workspace,
+        [
+            "--config",
+            config_path.to_str().expect("config path should be utf-8"),
+            "doctor",
+        ],
+        vec![
+            ("PATH".to_string(), prepend_path(&bin_dir)),
+            ("TERM".to_string(), "xterm-256color".to_string()),
+            ("NO_COLOR".to_string(), "1".to_string()),
+        ],
+    );
+
+    assert!(output.status.success(), "doctor should succeed: {output:?}");
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("PASS config_file"));
+    assert!(stdout.contains("Doctor completed without failing checks"));
+    assert!(!stdout.contains("\u{1b}[92mPASS\u{1b}[0m"));
+    assert!(!stdout.contains("\u{1b}[92mDoctor completed without failing checks\u{1b}[0m"));
 }
 
 fn write_fake_tmux(bin_dir: &std::path::Path) {

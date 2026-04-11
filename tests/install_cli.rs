@@ -6,6 +6,9 @@ use support::{
     commit_all, git, init_repo, publish_repo, run_git, run_tpm, unique_temp_dir, write_file,
 };
 
+#[cfg(unix)]
+use support::run_tpm_in_pty_with_env;
+
 #[test]
 fn install_missing_config_suggests_migrate_or_add() {
     let workspace = unique_temp_dir("install-missing-config");
@@ -340,6 +343,156 @@ fn install_preserves_plugin_output_order_for_mixed_outcomes() {
         String::from_utf8(output.stderr).expect("stderr should be utf-8"),
         ""
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn install_colorizes_interactive_terminal_output() {
+    let workspace = unique_temp_dir("install-color-terminal");
+    let installed_repo = workspace.join("author").join("tmux-installed");
+    let installed_bare_repo = workspace.join("remotes").join("tmux-installed.git");
+    let new_repo = workspace.join("author").join("tmux-new");
+    let new_bare_repo = workspace.join("remotes").join("tmux-new.git");
+    let failing_repo = workspace.join("author").join("tmux-fail");
+    let failing_bare_repo = workspace.join("remotes").join("tmux-fail.git");
+    let config_path = workspace.join("config").join("tpm.yaml");
+    let plugins_dir = workspace.join("plugins");
+    let installed_checkout = plugins_dir.join("tmux-installed");
+
+    init_repo(&installed_repo);
+    write_file(&installed_repo.join("plugin.txt"), "installed\n");
+    commit_all(&installed_repo, "initial");
+    publish_repo(&installed_repo, &installed_bare_repo);
+
+    init_repo(&new_repo);
+    write_file(&new_repo.join("plugin.txt"), "new\n");
+    commit_all(&new_repo, "initial");
+    publish_repo(&new_repo, &new_bare_repo);
+
+    init_repo(&failing_repo);
+    write_file(&failing_repo.join("plugin.txt"), "fail\n");
+    commit_all(&failing_repo, "initial");
+    publish_repo(&failing_repo, &failing_bare_repo);
+
+    fs::create_dir_all(
+        config_path
+            .parent()
+            .expect("config path should have a parent directory"),
+    )
+    .expect("config directory should exist");
+    fs::write(
+        &config_path,
+        format!(
+            concat!(
+                "version: 1\n",
+                "paths:\n",
+                "  plugins: ../plugins\n",
+                "plugins:\n",
+                "- source: {}\n",
+                "- source: {}\n",
+                "- source: {}\n",
+                "  branch: stable\n",
+            ),
+            installed_bare_repo.display(),
+            new_bare_repo.display(),
+            failing_bare_repo.display(),
+        ),
+    )
+    .expect("config should be writable");
+
+    fs::create_dir_all(&plugins_dir).expect("plugins directory should exist");
+    git(
+        &workspace,
+        vec![
+            "clone".to_string(),
+            installed_bare_repo.display().to_string(),
+            installed_checkout.display().to_string(),
+        ],
+    );
+
+    let output = run_tpm_in_pty_with_env(
+        &workspace,
+        [
+            "--config",
+            config_path.to_str().expect("config path should be utf-8"),
+            "install",
+        ],
+        vec![("TERM".to_string(), "xterm-256color".to_string())],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains(&format!(
+        "Installing 3 plugins into {}",
+        plugins_dir.display()
+    )));
+    assert!(stdout.contains("  [1/3] tmux-installed... \u{1b}[93malready installed\u{1b}[0m"));
+    assert!(stdout.contains("  [2/3] tmux-new... \u{1b}[92minstalled\u{1b}[0m"));
+    assert!(stdout.contains("  [3/3] tmux-fail... \u{1b}[91mfailed\u{1b}[0m"));
+    assert!(stdout.contains(
+        "\u{1b}[91m         configured branch `stable` is not available as a remote branch\u{1b}[0m"
+    ));
+    assert!(stdout.contains("\u{1b}[92m1 installed\u{1b}[0m"));
+    assert!(stdout.contains("\u{1b}[93m1 already installed\u{1b}[0m"));
+    assert!(stdout.contains("\u{1b}[91m1 failed\u{1b}[0m"));
+}
+
+#[cfg(unix)]
+#[test]
+fn install_disables_color_when_no_color_is_set() {
+    let workspace = unique_temp_dir("install-no-color-terminal");
+    let author_repo = workspace.join("author").join("tmux-sensible");
+    let bare_repo = workspace.join("remotes").join("tmux-sensible.git");
+    let config_path = workspace.join("config").join("tpm.yaml");
+
+    init_repo(&author_repo);
+    write_file(&author_repo.join("plugin.txt"), "v1\n");
+    commit_all(&author_repo, "initial");
+    publish_repo(&author_repo, &bare_repo);
+
+    fs::create_dir_all(
+        config_path
+            .parent()
+            .expect("config path should have a parent directory"),
+    )
+    .expect("config directory should exist");
+    fs::write(
+        &config_path,
+        format!(
+            concat!(
+                "version: 1\n",
+                "paths:\n",
+                "  plugins: ../plugins\n",
+                "plugins:\n",
+                "- source: {}\n",
+            ),
+            bare_repo.display(),
+        ),
+    )
+    .expect("config should be writable");
+
+    let output = run_tpm_in_pty_with_env(
+        &workspace,
+        [
+            "--config",
+            config_path.to_str().expect("config path should be utf-8"),
+            "install",
+        ],
+        vec![
+            ("TERM".to_string(), "xterm-256color".to_string()),
+            ("NO_COLOR".to_string(), "1".to_string()),
+        ],
+    );
+
+    assert!(
+        output.status.success(),
+        "install should succeed: {output:?}"
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("  [1/1] tmux-sensible... installed"));
+    assert!(stdout.contains("Done in "));
+    assert!(stdout.contains("1 installed, 0 already installed, 0 failed."));
+    assert!(!stdout.contains("\u{1b}["));
 }
 
 #[test]

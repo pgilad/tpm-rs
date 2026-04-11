@@ -1,6 +1,9 @@
 use std::{
     cmp::Ordering,
+    env,
+    ffi::OsStr,
     fs,
+    io::{self, IsTerminal},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -51,6 +54,11 @@ enum PathDisplayMode {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NumericVersion(Vec<u64>);
+
+#[derive(Debug, Clone, Copy)]
+struct DoctorTheme {
+    color: bool,
+}
 
 pub fn run(
     config_override: Option<&Path>,
@@ -429,6 +437,7 @@ fn has_git_metadata(path: &Path) -> bool {
 }
 
 fn print_human(report: &DoctorReport) {
+    let theme = DoctorTheme::detect();
     let width = report
         .checks
         .iter()
@@ -438,8 +447,8 @@ fn print_human(report: &DoctorReport) {
 
     for check in &report.checks {
         println!(
-            "{status:<4} {name:<width$}  {summary}",
-            status = check.status.label(),
+            "{status} {name:<width$}  {summary}",
+            status = check.status.rendered_label(theme),
             name = check.name,
             summary = check.summary,
         );
@@ -449,9 +458,18 @@ fn print_human(report: &DoctorReport) {
     }
 
     if report.ok {
-        println!("Doctor completed without failing checks");
+        println!(
+            "{}",
+            theme.success("Doctor completed without failing checks")
+        );
     } else {
-        println!("Doctor found {} failing check(s)", report.failing_checks);
+        println!(
+            "{}",
+            theme.failure(&format!(
+                "Doctor found {} failing check(s)",
+                report.failing_checks
+            ))
+        );
     }
 
     if !report.paths.config_exists {
@@ -475,6 +493,26 @@ fn format_path(path: &Path, mode: PathDisplayMode) -> String {
         PathDisplayMode::Absolute => path.display().to_string(),
         PathDisplayMode::User => display_user_path(path),
     }
+}
+
+fn stdout_supports_color() -> bool {
+    if env::var_os("NO_COLOR").is_some() {
+        return false;
+    }
+
+    if env::var_os("CLICOLOR_FORCE").is_some_and(|value| value != OsStr::new("0")) {
+        return true;
+    }
+
+    if !io::stdout().is_terminal() {
+        return false;
+    }
+
+    if env::var_os("CLICOLOR").is_some_and(|value| value == OsStr::new("0")) {
+        return false;
+    }
+
+    env::var_os("TERM").is_none_or(|value| value != OsStr::new("dumb"))
 }
 
 impl DoctorCheck {
@@ -525,6 +563,42 @@ impl DoctorStatus {
             Self::Pass => "PASS",
             Self::Fail => "FAIL",
             Self::Skip => "SKIP",
+        }
+    }
+
+    fn rendered_label(self, theme: DoctorTheme) -> String {
+        match self {
+            Self::Pass => theme.success(self.label()),
+            Self::Fail => theme.failure(self.label()),
+            Self::Skip => theme.warning(self.label()),
+        }
+    }
+}
+
+impl DoctorTheme {
+    fn detect() -> Self {
+        Self {
+            color: stdout_supports_color(),
+        }
+    }
+
+    fn success(self, text: &str) -> String {
+        self.paint(text, "92")
+    }
+
+    fn failure(self, text: &str) -> String {
+        self.paint(text, "91")
+    }
+
+    fn warning(self, text: &str) -> String {
+        self.paint(text, "93")
+    }
+
+    fn paint(self, text: &str, code: &str) -> String {
+        if self.color {
+            format!("\u{1b}[{code}m{text}\u{1b}[0m")
+        } else {
+            text.to_string()
         }
     }
 }

@@ -7,7 +7,10 @@ use std::{
 
 use crate::{
     commands::{
-        progress::{ProgressStream, display_user_path, format_duration, indent_detail, pluralize},
+        progress::{
+            ProgressStream, TerminalTheme, display_user_path, format_duration, indent_detail,
+            pluralize,
+        },
         sync::{self, SyncPlugin},
     },
     error::{AppError, Result},
@@ -49,6 +52,7 @@ impl InstallReport {
 #[derive(Debug)]
 struct HumanInstallUi {
     stream: ProgressStream,
+    theme: TerminalTheme,
     started_at: Instant,
 }
 
@@ -62,19 +66,18 @@ impl InstallUi {
     fn detect() -> Self {
         let stdout_is_terminal = io::stdout().is_terminal();
         let stderr_is_terminal = io::stderr().is_terminal();
-        let human = if stderr_is_terminal {
-            Some(HumanInstallUi {
-                stream: ProgressStream::Stderr,
-                started_at: Instant::now(),
-            })
+        let human_stream = if stderr_is_terminal {
+            Some(ProgressStream::Stderr)
         } else if stdout_is_terminal {
-            Some(HumanInstallUi {
-                stream: ProgressStream::Stdout,
-                started_at: Instant::now(),
-            })
+            Some(ProgressStream::Stdout)
         } else {
             None
         };
+        let human = human_stream.map(|stream| HumanInstallUi {
+            stream,
+            theme: TerminalTheme::detect(stream),
+            started_at: Instant::now(),
+        });
 
         Self {
             human,
@@ -126,22 +129,39 @@ impl HumanInstallUi {
 
     fn finish_plugin(&self, event: &InstallEvent) {
         match event {
-            InstallEvent::Installed(_, _) => self.write_line(" installed"),
-            InstallEvent::Skipped(_, _) => self.write_line(" already installed"),
+            InstallEvent::Installed(_, _) => {
+                self.write_line(&format!(" {}", self.theme.success("installed")))
+            }
+            InstallEvent::Skipped(_, _) => {
+                self.write_line(&format!(" {}", self.theme.warning("already installed")))
+            }
             InstallEvent::Failed(_, error) => {
-                self.write_line(" failed");
-                self.write_line(&format!("         {}", indent_detail(error)));
+                self.write_line(&format!(" {}", self.theme.failure("failed")));
+                self.write_line(
+                    &self
+                        .theme
+                        .failure(&format!("         {}", indent_detail(error))),
+                );
             }
         }
     }
 
     fn finish(&self, report: &InstallReport) {
+        let failed = if report.failed_count == 0 {
+            format!("{} failed", report.failed_count)
+        } else {
+            self.theme
+                .failure(&format!("{} failed", report.failed_count))
+        };
+
         self.write_line(&format!(
-            "Done in {}. {} installed, {} already installed, {} failed.",
+            "Done in {}. {}, {}, {}.",
             format_duration(self.started_at.elapsed()),
-            report.installed_count,
-            report.skipped_count,
-            report.failed_count
+            self.theme
+                .success(&format!("{} installed", report.installed_count)),
+            self.theme
+                .warning(&format!("{} already installed", report.skipped_count)),
+            failed,
         ));
     }
 
