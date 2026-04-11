@@ -62,8 +62,16 @@ impl TerminalTheme {
         self.paint(text, "93")
     }
 
+    pub(crate) fn info(self, text: &str) -> String {
+        self.paint(text, "96")
+    }
+
     pub(crate) fn failure(self, text: &str) -> String {
         self.paint(text, "91")
+    }
+
+    pub(crate) fn muted(self, text: &str) -> String {
+        self.paint(text, "2")
     }
 
     fn paint(self, text: &str, code: &str) -> String {

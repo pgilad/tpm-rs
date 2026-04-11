@@ -1,4 +1,11 @@
-use crate::{commands::resolved_paths, error::Result, user_path::display_user_path};
+use crate::{
+    commands::{
+        progress::{ProgressStream, TerminalTheme},
+        resolved_paths,
+    },
+    error::Result,
+    user_path::display_user_path,
+};
 
 pub fn run(
     config_override: Option<&std::path::Path>,
@@ -12,18 +19,45 @@ pub fn run(
         return Ok(());
     }
 
-    println!("Config file: {}", display_user_path(&paths.config_file));
-    println!("Config dir:  {}", display_user_path(&paths.config_dir));
-    println!("Data dir:    {}", display_user_path(&paths.data_dir));
-    println!("State dir:   {}", display_user_path(&paths.state_dir));
-    println!("Cache dir:   {}", display_user_path(&paths.cache_dir));
-    println!("Plugins dir: {}", display_user_path(&paths.plugins_dir));
+    let theme = TerminalTheme::detect(ProgressStream::Stdout);
+
     println!(
-        "Config:      {}",
+        "{} {}",
+        theme.info("Config file:"),
+        display_user_path(&paths.config_file)
+    );
+    println!(
+        "{} {}",
+        theme.info("Config dir: "),
+        display_user_path(&paths.config_dir)
+    );
+    println!(
+        "{} {}",
+        theme.info("Data dir:   "),
+        display_user_path(&paths.data_dir)
+    );
+    println!(
+        "{} {}",
+        theme.info("State dir:  "),
+        display_user_path(&paths.state_dir)
+    );
+    println!(
+        "{} {}",
+        theme.info("Cache dir:  "),
+        display_user_path(&paths.cache_dir)
+    );
+    println!(
+        "{} {}",
+        theme.info("Plugins dir:"),
+        display_user_path(&paths.plugins_dir)
+    );
+    println!(
+        "{} {}",
+        theme.info("Config:     "),
         if paths.config_exists {
-            "present"
+            theme.success("present")
         } else {
-            "missing"
+            theme.failure("missing")
         }
     );
 

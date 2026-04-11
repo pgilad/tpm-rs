@@ -6,6 +6,9 @@ mod support;
 
 use support::{run_tpm, unique_temp_dir};
 
+#[cfg(unix)]
+use support::run_tpm_in_pty_with_env;
+
 #[test]
 fn list_missing_config_suggests_migrate_or_add() {
     let workspace = unique_temp_dir("list-missing-config");
@@ -151,6 +154,77 @@ fn list_json_reports_branch_and_ref_configuration() {
     assert_eq!(items[1]["name"], "catppuccin/tmux");
     assert_eq!(items[1]["branch"], Value::Null);
     assert_eq!(items[1]["reference"], "v2.1.3");
+}
+
+#[cfg(unix)]
+#[test]
+fn list_colorizes_human_output_in_a_terminal() {
+    let workspace = unique_temp_dir("list-color-terminal");
+    let config_path = workspace.join("config").join("tpm.yaml");
+
+    write_config(
+        &config_path,
+        concat!(
+            "version: 1\n",
+            "paths:\n",
+            "  plugins: ../plugins\n",
+            "plugins:\n",
+            "- source: tmux-plugins/tmux-sensible\n",
+            "- source: tmux-plugins/tmux-yank\n",
+            "  enabled: false\n",
+        ),
+    );
+
+    let output = run_tpm_in_pty_with_env(
+        &workspace,
+        [
+            "--config",
+            config_path.to_str().expect("config path should be utf-8"),
+            "list",
+        ],
+        vec![("TERM".to_string(), "xterm-256color".to_string())],
+    );
+
+    assert!(output.status.success(), "list should succeed: {output:?}");
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("\u{1b}[92menabled \u{1b}[0m  \u{1b}[91mmissing  \u{1b}[0m"));
+    assert!(stdout.contains("\u{1b}[93mdisabled\u{1b}[0m  \u{1b}[91mmissing  \u{1b}[0m"));
+}
+
+#[cfg(unix)]
+#[test]
+fn list_disables_color_when_no_color_is_set() {
+    let workspace = unique_temp_dir("list-no-color-terminal");
+    let config_path = workspace.join("config").join("tpm.yaml");
+
+    write_config(
+        &config_path,
+        concat!(
+            "version: 1\n",
+            "paths:\n",
+            "  plugins: ../plugins\n",
+            "plugins:\n",
+            "- source: tmux-plugins/tmux-sensible\n",
+        ),
+    );
+
+    let output = run_tpm_in_pty_with_env(
+        &workspace,
+        [
+            "--config",
+            config_path.to_str().expect("config path should be utf-8"),
+            "list",
+        ],
+        vec![
+            ("TERM".to_string(), "xterm-256color".to_string()),
+            ("NO_COLOR".to_string(), "1".to_string()),
+        ],
+    );
+
+    assert!(output.status.success(), "list should succeed: {output:?}");
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("enabled   missing"));
+    assert!(!stdout.contains("\u{1b}["));
 }
 
 #[test]

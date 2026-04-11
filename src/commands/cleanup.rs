@@ -5,7 +5,10 @@ use std::{
 };
 
 use crate::{
-    commands::resolved_paths,
+    commands::{
+        progress::{ProgressStream, TerminalTheme},
+        resolved_paths,
+    },
     config::Config,
     error::{AppError, Result},
     plugin,
@@ -180,23 +183,38 @@ fn prune_empty_parent_dirs(path: Option<&Path>, plugins_dir: &Path) {
 }
 
 fn print_report(report: &CleanupReport) {
+    let stdout_theme = TerminalTheme::detect(ProgressStream::Stdout);
+    let stderr_theme = TerminalTheme::detect(ProgressStream::Stderr);
+
     for path in &report.removed {
-        println!("Removed stale plugin directory {}", display_user_path(path));
+        println!(
+            "{} stale plugin directory {}",
+            stdout_theme.success("Removed"),
+            display_user_path(path)
+        );
     }
 
     for path in &report.preserved {
-        println!("Preserved legacy TPM checkout {}", display_user_path(path));
+        println!(
+            "{} legacy TPM checkout {}",
+            stdout_theme.warning("Preserved"),
+            display_user_path(path)
+        );
     }
 
     for (path, error) in &report.failed {
         eprintln!(
-            "Failed to remove stale plugin directory {}: {}",
+            "{} to remove stale plugin directory {}: {}",
+            stderr_theme.failure("Failed"),
             display_user_path(path),
             error
         );
     }
 
     if report.removed.is_empty() && report.failed.is_empty() && report.preserved.is_empty() {
-        println!("No stale plugin directories found");
+        println!(
+            "{}",
+            stdout_theme.muted("No stale plugin directories found")
+        );
     }
 }

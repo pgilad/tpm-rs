@@ -4,6 +4,9 @@ mod support;
 
 use support::{run_tpm, unique_temp_dir};
 
+#[cfg(unix)]
+use support::run_tpm_in_pty_with_env;
+
 #[test]
 fn cleanup_removes_undeclared_plugin_directories() {
     let workspace = unique_temp_dir("cleanup-remove");
@@ -185,6 +188,47 @@ fn cleanup_succeeds_when_plugins_dir_is_missing() {
         String::from_utf8(output.stdout).expect("stdout should be utf-8"),
         "No stale plugin directories found\n"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn cleanup_colorizes_human_output_in_a_terminal() {
+    let workspace = unique_temp_dir("cleanup-color-terminal");
+    let config_path = workspace.join("config").join("tpm.yaml");
+    let plugins_dir = workspace.join("plugins");
+
+    write_config(
+        &config_path,
+        concat!(
+            "version: 1\n",
+            "paths:\n",
+            "  plugins: ../plugins\n",
+            "plugins:\n",
+            "- source: tmux-plugins/tmux-sensible\n",
+        ),
+    );
+    fs::create_dir_all(plugins_dir.join("tmux-plugins").join("tmux-sensible"))
+        .expect("declared plugin directory should exist");
+    fs::create_dir_all(plugins_dir.join("tpm")).expect("legacy tpm directory should exist");
+    fs::create_dir_all(plugins_dir.join("tmux-open")).expect("stale plugin directory should exist");
+
+    let output = run_tpm_in_pty_with_env(
+        &workspace,
+        [
+            "--config",
+            config_path.to_str().expect("config path should be utf-8"),
+            "cleanup",
+        ],
+        vec![("TERM".to_string(), "xterm-256color".to_string())],
+    );
+
+    assert!(
+        output.status.success(),
+        "cleanup should succeed: {output:?}"
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("\u{1b}[92mRemoved\u{1b}[0m stale plugin directory "));
+    assert!(stdout.contains("\u{1b}[93mPreserved\u{1b}[0m legacy TPM checkout "));
 }
 
 #[cfg(unix)]

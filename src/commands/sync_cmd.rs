@@ -14,7 +14,9 @@ use crate::{
 use super::{
     cleanup,
     install::{self, InstallOutcome},
-    progress::{ProgressStream, display_user_path, format_duration, indent_detail, pluralize},
+    progress::{
+        ProgressStream, TerminalTheme, display_user_path, format_duration, indent_detail, pluralize,
+    },
     resolved_paths, sync,
     update::{self, UpdateOutcome},
 };
@@ -67,6 +69,7 @@ impl SyncReport {
 #[derive(Debug)]
 struct HumanSyncUi {
     stream: ProgressStream,
+    theme: TerminalTheme,
     started_at: Instant,
 }
 
@@ -80,19 +83,18 @@ impl SyncUi {
     fn detect() -> Self {
         let stdout_is_terminal = io::stdout().is_terminal();
         let stderr_is_terminal = io::stderr().is_terminal();
-        let human = if stderr_is_terminal {
-            Some(HumanSyncUi {
-                stream: ProgressStream::Stderr,
-                started_at: Instant::now(),
-            })
+        let human_stream = if stderr_is_terminal {
+            Some(ProgressStream::Stderr)
         } else if stdout_is_terminal {
-            Some(HumanSyncUi {
-                stream: ProgressStream::Stdout,
-                started_at: Instant::now(),
-            })
+            Some(ProgressStream::Stdout)
         } else {
             None
         };
+        let human = human_stream.map(|stream| HumanSyncUi {
+            stream,
+            theme: TerminalTheme::detect(stream),
+            started_at: Instant::now(),
+        });
 
         Self {
             human,
@@ -149,17 +151,21 @@ impl HumanSyncUi {
     fn emit_cleanup_event(&self, event: &SyncEvent) {
         match event {
             SyncEvent::Removed(path) => self.write_line(&format!(
-                "Removed stale plugin directory {}",
+                "{} {}",
+                self.theme.success("Removed stale plugin directory"),
                 display_user_path(path)
             )),
             SyncEvent::PreservedLegacyCheckout(path) => self.write_line(&format!(
-                "Preserved legacy TPM checkout {}",
+                "{} {}",
+                self.theme.warning("Preserved legacy TPM checkout"),
                 display_user_path(path)
             )),
-            SyncEvent::CleanupFailed(path, error) => self.write_line(&format!(
-                "Failed to remove stale plugin directory {}: {error}",
-                display_user_path(path)
-            )),
+            SyncEvent::CleanupFailed(path, error) => {
+                self.write_line(&self.theme.failure(&format!(
+                    "Failed to remove stale plugin directory {}: {error}",
+                    display_user_path(path)
+                )))
+            }
             SyncEvent::Installed(_, _)
             | SyncEvent::Updated(_, _)
             | SyncEvent::AlreadyCurrent(_, _)
@@ -184,18 +190,30 @@ impl HumanSyncUi {
 
     fn finish_plugin(&self, event: &SyncEvent) {
         match event {
-            SyncEvent::Installed(_, _) => self.write_line(" installed"),
-            SyncEvent::Updated(_, _) => self.write_line(" updated"),
-            SyncEvent::AlreadyCurrent(_, _) => self.write_line(" already up to date"),
-            SyncEvent::Pinned(_, _, reference) => {
-                self.write_line(&format!(" pinned to ref {reference}"));
+            SyncEvent::Installed(_, _) => {
+                self.write_line(&format!(" {}", self.theme.success("installed")))
             }
-            SyncEvent::RealignedPinned(_, _, reference) => {
-                self.write_line(&format!(" realigned to ref {reference}"));
+            SyncEvent::Updated(_, _) => {
+                self.write_line(&format!(" {}", self.theme.success("updated")))
             }
+            SyncEvent::AlreadyCurrent(_, _) => {
+                self.write_line(&format!(" {}", self.theme.warning("already up to date")))
+            }
+            SyncEvent::Pinned(_, _, reference) => self.write_line(&format!(
+                " {}",
+                self.theme.warning(&format!("pinned to ref {reference}"))
+            )),
+            SyncEvent::RealignedPinned(_, _, reference) => self.write_line(&format!(
+                " {}",
+                self.theme.info(&format!("realigned to ref {reference}"))
+            )),
             SyncEvent::InstallFailed(_, error) | SyncEvent::UpdateFailed(_, error) => {
-                self.write_line(" failed");
-                self.write_line(&format!("         {}", indent_detail(error)));
+                self.write_line(&format!(" {}", self.theme.failure("failed")));
+                self.write_line(
+                    &self
+                        .theme
+                        .failure(&format!("         {}", indent_detail(error))),
+                );
             }
             SyncEvent::Removed(_)
             | SyncEvent::PreservedLegacyCheckout(_)
@@ -204,16 +222,31 @@ impl HumanSyncUi {
     }
 
     fn finish(&self, report: &SyncReport) {
+        let failed = if report.failed_count == 0 {
+            format!("{} failed", report.failed_count)
+        } else {
+            self.theme
+                .failure(&format!("{} failed", report.failed_count))
+        };
+
         self.write_line(&format!(
-            "Done in {}. {} removed, {} installed, {} updated, {} already up to date, {} pinned, {} realigned, {} failed.",
+            "Done in {}. {}, {}, {}, {}, {}, {}, {}.",
             format_duration(self.started_at.elapsed()),
-            report.removed_count,
-            report.installed_count,
-            report.updated_count,
-            report.already_current_count,
-            report.pinned_count,
-            report.realigned_count,
-            report.failed_count,
+            self.theme
+                .success(&format!("{} removed", report.removed_count)),
+            self.theme
+                .success(&format!("{} installed", report.installed_count)),
+            self.theme
+                .success(&format!("{} updated", report.updated_count)),
+            self.theme.warning(&format!(
+                "{} already up to date",
+                report.already_current_count
+            )),
+            self.theme
+                .warning(&format!("{} pinned", report.pinned_count)),
+            self.theme
+                .info(&format!("{} realigned", report.realigned_count)),
+            failed,
         ));
     }
 

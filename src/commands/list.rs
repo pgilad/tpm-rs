@@ -1,7 +1,10 @@
 use serde::Serialize;
 
 use crate::{
-    commands::{resolved_paths, sync},
+    commands::{
+        progress::{ProgressStream, TerminalTheme},
+        resolved_paths, sync,
+    },
     config::Config,
     error::{AppError, Result},
     plugin,
@@ -61,18 +64,23 @@ pub fn run(
         return Ok(());
     }
 
+    let theme = TerminalTheme::detect(ProgressStream::Stdout);
     let name_width = items.iter().map(|item| item.name.len()).max().unwrap_or(0);
     for item in items {
-        let enabled = if item.enabled { "enabled" } else { "disabled" };
-        let installed = if item.installed {
-            "installed"
+        let enabled = if item.enabled {
+            theme.success(&format!("{:<8}", "enabled"))
         } else {
-            "missing"
+            theme.warning(&format!("{:<8}", "disabled"))
+        };
+        let installed = if item.installed {
+            theme.success(&format!("{:<9}", "installed"))
+        } else {
+            theme.failure(&format!("{:<9}", "missing"))
         };
         let branch = item.branch.as_deref().unwrap_or("-");
         let reference = item.reference.as_deref().unwrap_or("-");
         println!(
-            "{name:<name_width$}  {enabled:<8}  {installed:<9}  branch={branch}  ref={reference}  source={source}",
+            "{name:<name_width$}  {enabled}  {installed}  branch={branch}  ref={reference}  source={source}",
             name = item.name,
             source = item.source,
         );

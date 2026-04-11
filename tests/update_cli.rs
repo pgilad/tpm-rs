@@ -7,7 +7,7 @@ use support::{
 };
 
 #[cfg(unix)]
-use support::{normalize_terminal_output, run_tpm_in_pty};
+use support::{normalize_terminal_output, run_tpm_in_pty_with_env};
 
 #[test]
 fn update_fast_forwards_default_branch_plugins_and_reports_when_current() {
@@ -614,6 +614,99 @@ fn update_rejects_existing_checkouts_from_a_different_source() {
 
 #[cfg(unix)]
 #[test]
+fn update_colorizes_interactive_terminal_output() {
+    let workspace = unique_temp_dir("update-color-terminal");
+    let current_repo = workspace.join("author").join("tmux-current");
+    let current_bare_repo = workspace.join("remotes").join("tmux-current.git");
+    let updated_repo = workspace.join("author").join("tmux-update");
+    let updated_bare_repo = workspace.join("remotes").join("tmux-update.git");
+    let pinned_repo = workspace.join("author").join("tmux-pinned");
+    let pinned_bare_repo = workspace.join("remotes").join("tmux-pinned.git");
+    let config_path = workspace.join("config").join("tpm.yaml");
+    let plugins_dir = workspace.join("plugins");
+
+    init_repo(&current_repo);
+    write_file(&current_repo.join("plugin.txt"), "current-v1\n");
+    commit_all(&current_repo, "initial");
+    publish_repo(&current_repo, &current_bare_repo);
+
+    init_repo(&updated_repo);
+    write_file(&updated_repo.join("plugin.txt"), "update-v1\n");
+    commit_all(&updated_repo, "initial");
+    publish_repo(&updated_repo, &updated_bare_repo);
+
+    init_repo(&pinned_repo);
+    write_file(&pinned_repo.join("plugin.txt"), "pinned-v1\n");
+    commit_all(&pinned_repo, "initial");
+    git(&pinned_repo, ["tag", "v1.0.0"]);
+    publish_repo(&pinned_repo, &pinned_bare_repo);
+
+    write_config(
+        &config_path,
+        &format!(
+            concat!(
+                "version: 1\n",
+                "paths:\n",
+                "  plugins: ../plugins\n",
+                "plugins:\n",
+                "- source: {}\n",
+                "- source: {}\n",
+                "- source: {}\n",
+                "  ref: v1.0.0\n",
+            ),
+            current_bare_repo.display(),
+            updated_bare_repo.display(),
+            pinned_bare_repo.display()
+        ),
+    );
+
+    let install_output = run_tpm(
+        &workspace,
+        [
+            "--config",
+            config_path.to_str().expect("config path should be utf-8"),
+            "install",
+        ],
+    );
+    assert!(
+        install_output.status.success(),
+        "install should succeed: {install_output:?}"
+    );
+
+    write_file(&updated_repo.join("plugin.txt"), "update-v2\n");
+    commit_all(&updated_repo, "second");
+    git(&updated_repo, ["push", "origin", "main"]);
+
+    write_file(&pinned_repo.join("plugin.txt"), "pinned-v2\n");
+    commit_all(&pinned_repo, "second");
+    git(&pinned_repo, ["push", "origin", "main", "--tags"]);
+
+    let output = run_tpm_in_pty_with_env(
+        &workspace,
+        [
+            "--config",
+            config_path.to_str().expect("config path should be utf-8"),
+            "update",
+        ],
+        vec![("TERM".to_string(), "xterm-256color".to_string())],
+    );
+
+    assert!(
+        output.status.success(),
+        "interactive update should succeed: {output:?}"
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains(&format!("Updating 3 plugins in {}", plugins_dir.display())));
+    assert!(stdout.contains("  [1/3] tmux-current... \u{1b}[93malready up to date\u{1b}[0m"));
+    assert!(stdout.contains("  [2/3] tmux-update... \u{1b}[92mupdated\u{1b}[0m"));
+    assert!(stdout.contains("  [3/3] tmux-pinned... \u{1b}[93mpinned to ref v1.0.0\u{1b}[0m"));
+    assert!(stdout.contains("\u{1b}[92m1 updated\u{1b}[0m"));
+    assert!(stdout.contains("\u{1b}[93m1 already up to date\u{1b}[0m"));
+    assert!(stdout.contains("\u{1b}[93m1 pinned\u{1b}[0m"));
+}
+
+#[cfg(unix)]
+#[test]
 fn update_shows_interactive_progress_in_a_terminal() {
     let workspace = unique_temp_dir("update-interactive");
     let current_repo = workspace.join("author").join("tmux-current");
@@ -681,13 +774,14 @@ fn update_shows_interactive_progress_in_a_terminal() {
     commit_all(&pinned_repo, "second");
     git(&pinned_repo, ["push", "origin", "main", "--tags"]);
 
-    let output = run_tpm_in_pty(
+    let output = run_tpm_in_pty_with_env(
         &workspace,
         [
             "--config",
             config_path.to_str().expect("config path should be utf-8"),
             "update",
         ],
+        vec![("NO_COLOR".to_string(), "1".to_string())],
     );
 
     assert!(
@@ -706,6 +800,7 @@ fn update_shows_interactive_progress_in_a_terminal() {
         terminal.contains("1 updated, 1 already up to date, 1 pinned, 0 realigned, 0 failed.\n")
     );
     assert!(terminal.contains("Done in "));
+    assert!(!terminal.contains("[9"));
 }
 
 fn write_config(path: &std::path::Path, contents: &str) {

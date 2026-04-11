@@ -6,6 +6,9 @@ mod support;
 
 use support::{run_tpm_with_env, run_tpm_without_home_with_env, unique_temp_dir};
 
+#[cfg(unix)]
+use support::run_tpm_in_pty_with_env;
+
 #[test]
 fn paths_shortens_home_paths_in_human_output() {
     let workspace = unique_temp_dir("paths-home");
@@ -47,6 +50,81 @@ fn paths_shortens_home_paths_in_human_output() {
             "Config:      missing\n",
         )
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn paths_colorizes_human_output_in_a_terminal() {
+    let workspace = unique_temp_dir("paths-color");
+    let home_dir = workspace.join("home");
+
+    let output = run_tpm_in_pty_with_env(
+        &workspace,
+        ["paths"],
+        vec![
+            ("TERM".to_string(), "xterm-256color".to_string()),
+            (
+                "XDG_CONFIG_HOME".to_string(),
+                home_dir.join(".config").display().to_string(),
+            ),
+            (
+                "XDG_DATA_HOME".to_string(),
+                home_dir.join(".local").join("share").display().to_string(),
+            ),
+            (
+                "XDG_STATE_HOME".to_string(),
+                home_dir.join(".local").join("state").display().to_string(),
+            ),
+            (
+                "XDG_CACHE_HOME".to_string(),
+                home_dir.join(".cache").display().to_string(),
+            ),
+        ],
+    );
+
+    assert!(output.status.success(), "paths should succeed: {output:?}");
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("\u{1b}[96mConfig file:\u{1b}[0m ~/.config/tpm/tpm.yaml"));
+    assert!(stdout.contains("\u{1b}[91mmissing\u{1b}[0m"));
+}
+
+#[cfg(unix)]
+#[test]
+fn paths_disables_color_when_no_color_is_set() {
+    let workspace = unique_temp_dir("paths-no-color");
+    let home_dir = workspace.join("home");
+
+    let output = run_tpm_in_pty_with_env(
+        &workspace,
+        ["paths"],
+        vec![
+            ("TERM".to_string(), "xterm-256color".to_string()),
+            ("NO_COLOR".to_string(), "1".to_string()),
+            (
+                "XDG_CONFIG_HOME".to_string(),
+                home_dir.join(".config").display().to_string(),
+            ),
+            (
+                "XDG_DATA_HOME".to_string(),
+                home_dir.join(".local").join("share").display().to_string(),
+            ),
+            (
+                "XDG_STATE_HOME".to_string(),
+                home_dir.join(".local").join("state").display().to_string(),
+            ),
+            (
+                "XDG_CACHE_HOME".to_string(),
+                home_dir.join(".cache").display().to_string(),
+            ),
+        ],
+    );
+
+    assert!(output.status.success(), "paths should succeed: {output:?}");
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("Config file: ~/.config/tpm/tpm.yaml"));
+    assert!(stdout.contains("Config:      missing"));
+    assert!(!stdout.contains("\u{1b}[96mConfig file:\u{1b}[0m"));
+    assert!(!stdout.contains("\u{1b}[91mmissing\u{1b}[0m"));
 }
 
 #[test]
