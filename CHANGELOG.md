@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.04.11-10
+
+- Improve example tpm.yaml (fbed530)
+- Add sync command to abstract cleanup+install+update (0b55cae)
+
 ## 2026.04.11-9
 
 - Shorten home paths in CLI output (f0eed75)
