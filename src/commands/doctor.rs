@@ -28,12 +28,20 @@ pub struct DoctorReport {
     failing_checks: usize,
     paths: ResolvedPaths,
     checks: Vec<DoctorCheck>,
+    hints: Vec<DoctorHint>,
 }
 
 #[derive(Debug, Serialize)]
 struct DoctorCheck {
     name: String,
     status: DoctorStatus,
+    summary: String,
+    detail: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct DoctorHint {
+    name: String,
     summary: String,
     detail: Option<String>,
 }
@@ -109,6 +117,11 @@ fn build_report(
     };
 
     checks.extend(path_checks(&effective_paths, path_display));
+    let hints = if config_result.is_some() {
+        legacy_plugin_dir_hints(&effective_paths.plugins_dir, path_display)
+    } else {
+        Vec::new()
+    };
 
     if let Some(config) = config_result {
         checks.extend(plugin_checks(
@@ -134,6 +147,7 @@ fn build_report(
         failing_checks,
         paths: effective_paths,
         checks,
+        hints,
     })
 }
 
@@ -332,6 +346,61 @@ fn nearest_existing_ancestor(path: &Path) -> Option<PathBuf> {
     }
 }
 
+fn legacy_plugin_dir_hints(plugins_dir: &Path, path_display: PathDisplayMode) -> Vec<DoctorHint> {
+    legacy_plugin_dir_candidates()
+        .into_iter()
+        .filter(|path| legacy_plugin_dir_needs_hint(path, plugins_dir))
+        .map(|path| {
+            DoctorHint::new(
+                "legacy_plugins_dir",
+                format!(
+                    "legacy TPM plugin directory exists at {}; tpm-rs is using {}",
+                    format_path(&path, path_display),
+                    format_path(plugins_dir, path_display)
+                ),
+                "If tmux.conf no longer bootstraps legacy TPM, consider deleting the legacy directory.",
+            )
+        })
+        .collect()
+}
+
+fn legacy_plugin_dir_candidates() -> Vec<PathBuf> {
+    let Some(home_dir) = env::var_os("HOME").map(PathBuf::from) else {
+        return Vec::new();
+    };
+
+    let xdg_config_home = env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home_dir.join(".config"));
+
+    vec![
+        home_dir.join(".tmux").join("plugins"),
+        xdg_config_home.join("tmux").join("plugins"),
+    ]
+}
+
+fn legacy_plugin_dir_needs_hint(path: &Path, plugins_dir: &Path) -> bool {
+    path.is_dir() && is_non_empty_dir(path) && !same_path(path, plugins_dir)
+}
+
+fn is_non_empty_dir(path: &Path) -> bool {
+    match fs::read_dir(path) {
+        Ok(mut entries) => entries.next().is_some(),
+        Err(_) => false,
+    }
+}
+
+fn same_path(left: &Path, right: &Path) -> bool {
+    if left == right {
+        return true;
+    }
+
+    match (fs::canonicalize(left), fs::canonicalize(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
+}
+
 fn plugin_checks(
     config: &Config,
     paths: &ResolvedPaths,
@@ -442,6 +511,7 @@ fn print_human(report: &DoctorReport) {
         .checks
         .iter()
         .map(|check| check.name.len())
+        .chain(report.hints.iter().map(|hint| hint.name.len()))
         .max()
         .unwrap_or(0);
 
@@ -453,6 +523,18 @@ fn print_human(report: &DoctorReport) {
             summary = check.summary,
         );
         if let Some(detail) = &check.detail {
+            println!("     {detail}");
+        }
+    }
+
+    for hint in &report.hints {
+        println!(
+            "{status} {name:<width$}  {summary}",
+            status = theme.warning("HINT"),
+            name = hint.name,
+            summary = hint.summary,
+        );
+        if let Some(detail) = &hint.detail {
             println!("     {detail}");
         }
     }
@@ -553,6 +635,16 @@ impl DoctorCheck {
             status: DoctorStatus::Skip,
             summary: summary.into(),
             detail: None,
+        }
+    }
+}
+
+impl DoctorHint {
+    fn new(name: impl Into<String>, summary: impl Into<String>, detail: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            summary: summary.into(),
+            detail: Some(detail.into()),
         }
     }
 }
