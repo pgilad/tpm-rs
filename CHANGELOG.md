@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.04.17-17
+
+- Add doctor hint for legacy TPM plugin dirs (6874b66)
+
 ## 2026.04.11-11
 
 - Use colors in various cmd outputs (bd547e3)
