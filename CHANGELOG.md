@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.04.19-19
+
+- Make config writes atomic (d5f5e56)
+
 ## 2026.04.17-17
 
 - Add doctor hint for legacy TPM plugin dirs (6874b66)
