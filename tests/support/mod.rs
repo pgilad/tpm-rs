@@ -118,7 +118,10 @@ where
         .current_dir(cwd)
         .env("HOME", &home_dir)
         .env_remove("TMUX")
-        .env_remove("TMUX_PANE");
+        .env_remove("TMUX_PANE")
+        .env_remove("NO_COLOR")
+        .env_remove("CLICOLOR")
+        .env_remove("CLICOLOR_FORCE");
     for (key, value) in envs {
         command.env(key, value);
     }
