@@ -306,7 +306,7 @@ const fn default_version() -> u32 {
 mod tests {
     use std::{
         fs,
-        path::PathBuf,
+        path::{Path, PathBuf},
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -345,14 +345,10 @@ mod tests {
     #[test]
     fn rejects_manifest_paths_that_escape_the_plugins_dir() {
         let root = unique_temp_dir("escape");
-        let manifest_path = manifest_path(&root);
-        fs::create_dir_all(manifest_path.parent().expect("manifest should have parent"))
-            .expect("manifest parent should exist");
-        fs::write(
-            &manifest_path,
+        write_raw_manifest(
+            &root,
             "version: 1\nplugins:\n  bad:\n    source: bad/source\n    clone_source: https://example.invalid/bad/source\n    path: ../bad\n",
-        )
-        .expect("manifest should be writable");
+        );
 
         let error = ManagedManifest::load_or_default(&root).expect_err("manifest should fail");
 
@@ -361,6 +357,48 @@ mod tests {
                 .to_string()
                 .contains("path must contain only normal relative components")
         );
+    }
+
+    #[test]
+    fn rejects_unsupported_manifest_versions() {
+        let root = unique_temp_dir("unsupported-version");
+        write_raw_manifest(&root, "version: 2\nplugins: {}\n");
+
+        let error = ManagedManifest::load_or_default(&root).expect_err("manifest should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported schema version 2; expected 1")
+        );
+    }
+
+    #[test]
+    fn rejects_manifest_entries_with_unknown_fields() {
+        let root = unique_temp_dir("unknown-field");
+        write_raw_manifest(
+            &root,
+            concat!(
+                "version: 1\n",
+                "plugins:\n",
+                "  tmux-open:\n",
+                "    source: tmux-open\n",
+                "    clone_source: https://example.invalid/tmux-open\n",
+                "    path: tmux-open\n",
+                "    checksum: not-supported\n",
+            ),
+        );
+
+        let error = ManagedManifest::load_or_default(&root).expect_err("manifest should fail");
+
+        assert!(error.to_string().contains("unknown field `checksum`"));
+    }
+
+    fn write_raw_manifest(root: &Path, contents: &str) {
+        let manifest_path = manifest_path(root);
+        fs::create_dir_all(manifest_path.parent().expect("manifest should have parent"))
+            .expect("manifest parent should exist");
+        fs::write(&manifest_path, contents).expect("manifest should be writable");
     }
 
     fn unique_temp_dir(name: &str) -> PathBuf {

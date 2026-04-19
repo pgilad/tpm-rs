@@ -173,6 +173,67 @@ fn cleanup_does_not_remove_a_path_still_used_by_a_declared_manifest_entry() {
 }
 
 #[test]
+fn cleanup_rejects_invalid_manifest_before_removing_stale_directories() {
+    let workspace = unique_temp_dir("cleanup-invalid-manifest");
+    let config_path = workspace.join("config").join("tpm.yaml");
+    let plugins_dir = workspace.join("plugins");
+    let stale_dir = plugins_dir.join("tmux-open");
+
+    write_config(
+        &config_path,
+        concat!(
+            "version: 1\n",
+            "paths:\n",
+            "  plugins: ../plugins\n",
+            "plugins:\n",
+            "- source: tmux-plugins/tmux-sensible\n",
+        ),
+    );
+    fs::create_dir_all(&stale_dir).expect("stale plugin directory should exist");
+    let manifest_path = managed_manifest_path(&plugins_dir);
+    fs::create_dir_all(
+        manifest_path
+            .parent()
+            .expect("manifest should have a parent"),
+    )
+    .expect("manifest directory should exist");
+    fs::write(
+        &manifest_path,
+        concat!(
+            "version: 1\n",
+            "plugins:\n",
+            "  tmux-open:\n",
+            "    source: tmux-open\n",
+            "    clone_source: tmux-open\n",
+            "    path: ../plugins/tmux-open\n",
+        ),
+    )
+    .expect("manifest should be writable");
+
+    let output = run_tpm(
+        &workspace,
+        [
+            "--config",
+            config_path.to_str().expect("config path should be utf-8"),
+            "cleanup",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8(output.stdout).expect("stdout should be utf-8"),
+        ""
+    );
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
+    assert!(stderr.contains("invalid managed plugin manifest"));
+    assert!(stderr.contains("path must contain only normal relative components"));
+    assert!(
+        stale_dir.is_dir(),
+        "cleanup should fail closed before removing stale directories"
+    );
+}
+
+#[test]
 fn cleanup_removes_undeclared_namespaced_plugin_directories() {
     let workspace = unique_temp_dir("cleanup-remove-namespaced");
     let config_path = workspace.join("config").join("tpm.yaml");
