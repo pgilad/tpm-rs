@@ -216,6 +216,37 @@ pub fn write_file(path: &Path, contents: &str) {
     fs::write(path, contents).expect("file should be writable");
 }
 
+pub fn managed_manifest_path(plugins_dir: &Path) -> PathBuf {
+    plugins_dir.join(".tpm-rs").join("managed.yaml")
+}
+
+pub fn write_managed_manifest(plugins_dir: &Path, entries: &[(&str, &str, &str)]) {
+    let manifest_path = managed_manifest_path(plugins_dir);
+    fs::create_dir_all(
+        manifest_path
+            .parent()
+            .expect("manifest path should have a parent"),
+    )
+    .expect("manifest directory should be created");
+
+    let mut contents = String::from("version: 1\nplugins:\n");
+    for (name, path, source) in entries {
+        contents.push_str(&format!(
+            "  {}:\n    source: {}\n    clone_source: {}\n    path: {}\n",
+            yaml_string(name),
+            yaml_string(source),
+            yaml_string(source),
+            yaml_string(path),
+        ));
+    }
+
+    fs::write(manifest_path, contents).expect("manifest should be writable");
+}
+
+fn yaml_string(value: &str) -> String {
+    serde_json::to_string(value).expect("test manifest value should serialize")
+}
+
 #[cfg(unix)]
 pub fn set_executable(path: &Path) {
     use std::os::unix::fs::PermissionsExt;

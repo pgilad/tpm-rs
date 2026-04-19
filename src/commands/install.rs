@@ -14,6 +14,7 @@ use crate::{
         sync::{self, SyncPlugin},
     },
     error::{AppError, Result},
+    manifest::ManagedManifest,
     paths::ResolvedPaths,
 };
 
@@ -190,15 +191,19 @@ pub(crate) fn run_plugins(paths: &ResolvedPaths, plugins: &[SyncPlugin]) -> Resu
     let ui = InstallUi::detect();
     ui.begin(&paths.plugins_dir, plugins.len());
 
+    let mut manifest = ManagedManifest::load_or_default(&paths.plugins_dir)?;
+    let mut manifest_changed = false;
     let mut report = InstallReport::default();
     for (index, plugin) in plugins.iter().enumerate() {
         ui.start_plugin(index + 1, plugins.len(), &plugin.install_name);
 
         let event = match install_plugin(plugin) {
             Ok(InstallOutcome::Installed(path)) => {
+                manifest_changed |= sync::record_manifest_plugin(&mut manifest, paths, plugin)?;
                 InstallEvent::Installed(plugin.install_name.clone(), path)
             }
             Ok(InstallOutcome::AlreadyInstalled(path)) => {
+                manifest_changed |= sync::record_manifest_plugin(&mut manifest, paths, plugin)?;
                 InstallEvent::Skipped(plugin.install_name.clone(), path)
             }
             Err(error) => InstallEvent::Failed(plugin.install_name.clone(), error),
@@ -209,6 +214,9 @@ pub(crate) fn run_plugins(paths: &ResolvedPaths, plugins: &[SyncPlugin]) -> Resu
     }
 
     ui.finish(&report);
+    if manifest_changed {
+        manifest.save(&paths.plugins_dir)?;
+    }
 
     if report.failed_count == 0 {
         Ok(())

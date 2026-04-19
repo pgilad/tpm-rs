@@ -2,13 +2,13 @@ use std::fs;
 
 mod support;
 
-use support::{run_tpm, unique_temp_dir};
+use support::{managed_manifest_path, run_tpm, unique_temp_dir, write_managed_manifest};
 
 #[cfg(unix)]
 use support::run_tpm_in_pty_with_env;
 
 #[test]
-fn cleanup_removes_undeclared_plugin_directories() {
+fn cleanup_removes_manifest_managed_undeclared_plugin_directories() {
     let workspace = unique_temp_dir("cleanup-remove");
     let config_path = workspace.join("config").join("tpm.yaml");
     let plugins_dir = workspace.join("plugins");
@@ -27,6 +27,13 @@ fn cleanup_removes_undeclared_plugin_directories() {
         .expect("declared plugin directory should exist");
     fs::create_dir_all(plugins_dir.join("tmux-open")).expect("stale plugin directory should exist");
     fs::create_dir_all(plugins_dir.join("zzz")).expect("stale plugin directory should exist");
+    write_managed_manifest(
+        &plugins_dir,
+        &[
+            ("tmux-open", "tmux-open", "tmux-open"),
+            ("zzz", "zzz", "zzz"),
+        ],
+    );
 
     let output = run_tpm(
         &workspace,
@@ -60,6 +67,112 @@ fn cleanup_removes_undeclared_plugin_directories() {
 }
 
 #[test]
+fn cleanup_preserves_unmanaged_undeclared_plugin_directories() {
+    let workspace = unique_temp_dir("cleanup-preserve-unmanaged");
+    let config_path = workspace.join("config").join("tpm.yaml");
+    let plugins_dir = workspace.join("plugins");
+
+    write_config(
+        &config_path,
+        concat!(
+            "version: 1\n",
+            "paths:\n",
+            "  plugins: ../plugins\n",
+            "plugins:\n",
+            "- source: tmux-plugins/tmux-sensible\n",
+        ),
+    );
+    fs::create_dir_all(plugins_dir.join("tmux-plugins").join("tmux-sensible"))
+        .expect("declared plugin directory should exist");
+    fs::create_dir_all(plugins_dir.join("tmux-open")).expect("manual directory should exist");
+    fs::create_dir_all(plugins_dir.join("zzz")).expect("manual directory should exist");
+
+    let output = run_tpm(
+        &workspace,
+        [
+            "--config",
+            config_path.to_str().expect("config path should be utf-8"),
+            "cleanup",
+        ],
+    );
+
+    assert!(
+        output.status.success(),
+        "cleanup should succeed: {output:?}"
+    );
+    assert_eq!(
+        String::from_utf8(output.stdout).expect("stdout should be utf-8"),
+        "No stale plugin directories found\n"
+    );
+    assert!(plugins_dir.join("tmux-open").is_dir());
+    assert!(plugins_dir.join("zzz").is_dir());
+    assert!(
+        managed_manifest_path(&plugins_dir).is_file(),
+        "cleanup should create the managed manifest when the plugins directory exists"
+    );
+}
+
+#[test]
+fn cleanup_does_not_remove_a_path_still_used_by_a_declared_manifest_entry() {
+    let workspace = unique_temp_dir("cleanup-preserve-declared-path");
+    let config_path = workspace.join("config").join("tpm.yaml");
+    let plugins_dir = workspace.join("plugins");
+    let checkout = plugins_dir.join("tmux-plugins").join("tmux-sensible");
+
+    write_config(
+        &config_path,
+        concat!(
+            "version: 1\n",
+            "paths:\n",
+            "  plugins: ../plugins\n",
+            "plugins:\n",
+            "- source: tmux-plugins/tmux-sensible\n",
+        ),
+    );
+    fs::create_dir_all(&checkout).expect("declared plugin directory should exist");
+    write_managed_manifest(
+        &plugins_dir,
+        &[
+            (
+                "tmux-plugins/tmux-sensible",
+                "tmux-plugins/tmux-sensible",
+                "tmux-plugins/tmux-sensible",
+            ),
+            (
+                "old-alias",
+                "tmux-plugins/tmux-sensible",
+                "tmux-plugins/tmux-sensible",
+            ),
+        ],
+    );
+
+    let output = run_tpm(
+        &workspace,
+        [
+            "--config",
+            config_path.to_str().expect("config path should be utf-8"),
+            "cleanup",
+        ],
+    );
+
+    assert!(
+        output.status.success(),
+        "cleanup should succeed: {output:?}"
+    );
+    assert_eq!(
+        String::from_utf8(output.stdout).expect("stdout should be utf-8"),
+        "No stale plugin directories found\n"
+    );
+    assert!(
+        checkout.is_dir(),
+        "cleanup should preserve a path still used by a declared manifest entry"
+    );
+    let manifest =
+        fs::read_to_string(managed_manifest_path(&plugins_dir)).expect("manifest should exist");
+    assert!(!manifest.contains("old-alias"));
+}
+
+#[test]
 fn cleanup_removes_undeclared_namespaced_plugin_directories() {
     let workspace = unique_temp_dir("cleanup-remove-namespaced");
     let config_path = workspace.join("config").join("tpm.yaml");
@@ -79,6 +192,14 @@ fn cleanup_removes_undeclared_namespaced_plugin_directories() {
         .expect("declared plugin directory should exist");
     fs::create_dir_all(plugins_dir.join("tmux-plugins").join("tmux-open"))
         .expect("stale namespaced plugin directory should exist");
+    write_managed_manifest(
+        &plugins_dir,
+        &[(
+            "tmux-plugins/tmux-open",
+            "tmux-plugins/tmux-open",
+            "tmux-plugins/tmux-open",
+        )],
+    );
 
     let output = run_tpm(
         &workspace,
@@ -129,6 +250,13 @@ fn cleanup_preserves_legacy_tpm_checkout() {
         .expect("declared plugin directory should exist");
     fs::create_dir_all(plugins_dir.join("tpm")).expect("legacy tpm directory should exist");
     fs::create_dir_all(plugins_dir.join("tmux-open")).expect("stale plugin directory should exist");
+    write_managed_manifest(
+        &plugins_dir,
+        &[
+            ("tpm", "tpm", "tmux-plugins/tpm"),
+            ("tmux-open", "tmux-open", "tmux-open"),
+        ],
+    );
 
     let output = run_tpm(
         &workspace,
@@ -211,6 +339,7 @@ fn cleanup_colorizes_human_output_in_a_terminal() {
         .expect("declared plugin directory should exist");
     fs::create_dir_all(plugins_dir.join("tpm")).expect("legacy tpm directory should exist");
     fs::create_dir_all(plugins_dir.join("tmux-open")).expect("stale plugin directory should exist");
+    write_managed_manifest(&plugins_dir, &[("tmux-open", "tmux-open", "tmux-open")]);
 
     let output = run_tpm_in_pty_with_env(
         &workspace,
@@ -254,6 +383,7 @@ fn cleanup_reports_failed_removals() {
     fs::create_dir_all(plugins_dir.join("tmux-plugins").join("tmux-sensible"))
         .expect("declared plugin directory should exist");
     fs::create_dir_all(&stale_dir).expect("stale plugin directory should exist");
+    write_managed_manifest(&plugins_dir, &[("tmux-open", "tmux-open", "tmux-open")]);
 
     let original_permissions = fs::metadata(&plugins_dir)
         .expect("plugins dir metadata should exist")

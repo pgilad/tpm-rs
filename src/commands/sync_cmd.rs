@@ -1,5 +1,4 @@
 use std::{
-    collections::BTreeSet,
     io::{self, IsTerminal},
     path::{Path, PathBuf},
     time::Instant,
@@ -8,7 +7,7 @@ use std::{
 use crate::{
     config::Config,
     error::{AppError, Result},
-    plugin,
+    manifest::ManagedManifest,
 };
 
 use super::{
@@ -266,29 +265,42 @@ pub fn run(config_override: Option<&Path>, plugins_override: Option<&Path>) -> R
             path: paths.config_file.clone(),
         })?;
 
-    let declared = config
+    let configured = config
         .plugins
         .iter()
-        .map(|plugin_config| plugin::install_name(&plugin_config.source).map(PathBuf::from))
-        .collect::<Result<BTreeSet<_>>>()?;
-    let plugins = config
-        .plugins
-        .iter()
-        .filter(|plugin_config| plugin_config.enabled)
         .map(|plugin_config| sync::configured_plugin(&paths, plugin_config))
         .collect::<Result<Vec<_>>>()?;
+    let declared = configured
+        .iter()
+        .map(|plugin| plugin.install_name.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let plugins = configured
+        .iter()
+        .filter(|plugin| plugin.enabled)
+        .cloned()
+        .collect::<Vec<_>>();
 
     let ui = SyncUi::detect();
     let mut report = SyncReport::default();
+    let mut manifest = ManagedManifest::load_or_default(&paths.plugins_dir)?;
+    let mut manifest_changed = sync::adopt_configured_plugins(&mut manifest, &paths, &configured)?;
 
     if !plugins.is_empty() {
         ui.begin(&paths.plugins_dir, plugins.len());
     }
 
-    let cleanup_report = cleanup::cleanup_plugins_dir(&paths.plugins_dir, &declared)?;
+    let cleanup_report =
+        cleanup::cleanup_plugins_dir(&paths.plugins_dir, &declared, &mut manifest)?;
+    manifest_changed |= cleanup_report.manifest_changed;
     push_cleanup_events(&ui, &mut report, cleanup_report);
 
     if plugins.is_empty() && report.events.is_empty() {
+        if manifest_changed
+            || (paths.plugins_dir.exists()
+                && !crate::manifest::manifest_path(&paths.plugins_dir).exists())
+        {
+            manifest.save(&paths.plugins_dir)?;
+        }
         ui.nothing_to_do();
         return Ok(());
     }
@@ -299,15 +311,23 @@ pub fn run(config_override: Option<&Path>, plugins_override: Option<&Path>) -> R
         let event = if plugin.install_dir.exists() {
             match update::update_plugin(plugin) {
                 Ok(UpdateOutcome::Updated(path)) => {
+                    manifest_changed |=
+                        sync::record_manifest_plugin(&mut manifest, &paths, plugin)?;
                     SyncEvent::Updated(plugin.install_name.clone(), path)
                 }
                 Ok(UpdateOutcome::AlreadyCurrent(path)) => {
+                    manifest_changed |=
+                        sync::record_manifest_plugin(&mut manifest, &paths, plugin)?;
                     SyncEvent::AlreadyCurrent(plugin.install_name.clone(), path)
                 }
                 Ok(UpdateOutcome::Pinned(path, reference)) => {
+                    manifest_changed |=
+                        sync::record_manifest_plugin(&mut manifest, &paths, plugin)?;
                     SyncEvent::Pinned(plugin.install_name.clone(), path, reference)
                 }
                 Ok(UpdateOutcome::RealignedPinned(path, reference)) => {
+                    manifest_changed |=
+                        sync::record_manifest_plugin(&mut manifest, &paths, plugin)?;
                     SyncEvent::RealignedPinned(plugin.install_name.clone(), path, reference)
                 }
                 Err(error) => SyncEvent::UpdateFailed(plugin.install_name.clone(), error),
@@ -315,9 +335,13 @@ pub fn run(config_override: Option<&Path>, plugins_override: Option<&Path>) -> R
         } else {
             match install::install_plugin(plugin) {
                 Ok(InstallOutcome::Installed(path)) => {
+                    manifest_changed |=
+                        sync::record_manifest_plugin(&mut manifest, &paths, plugin)?;
                     SyncEvent::Installed(plugin.install_name.clone(), path)
                 }
                 Ok(InstallOutcome::AlreadyInstalled(path)) => {
+                    manifest_changed |=
+                        sync::record_manifest_plugin(&mut manifest, &paths, plugin)?;
                     SyncEvent::AlreadyCurrent(plugin.install_name.clone(), path)
                 }
                 Err(error) => SyncEvent::InstallFailed(plugin.install_name.clone(), error),
@@ -329,6 +353,12 @@ pub fn run(config_override: Option<&Path>, plugins_override: Option<&Path>) -> R
     }
 
     ui.finish(&report);
+    if manifest_changed
+        || (paths.plugins_dir.exists()
+            && !crate::manifest::manifest_path(&paths.plugins_dir).exists())
+    {
+        manifest.save(&paths.plugins_dir)?;
+    }
 
     if report.failed_count == 0 {
         Ok(())

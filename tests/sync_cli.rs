@@ -2,7 +2,10 @@ use std::fs;
 
 mod support;
 
-use support::{commit_all, git, init_repo, publish_repo, run_tpm, unique_temp_dir, write_file};
+use support::{
+    commit_all, git, init_repo, publish_repo, run_tpm, unique_temp_dir, write_file,
+    write_managed_manifest,
+};
 
 #[cfg(unix)]
 use support::run_tpm_in_pty_with_env;
@@ -54,6 +57,7 @@ fn sync_cleans_up_installs_missing_plugins_and_updates_existing_plugins_without_
         ],
     );
     fs::create_dir_all(&stale_dir).expect("stale directory should exist");
+    write_managed_manifest(&plugins_dir, &[("tmux-stale", "tmux-stale", "tmux-stale")]);
 
     write_file(&current_repo.join("plugin.txt"), "current-v2\n");
     commit_all(&current_repo, "second");
@@ -146,6 +150,7 @@ fn sync_continues_after_an_update_failure_and_still_installs_missing_plugins() {
         ],
     );
     fs::create_dir_all(&stale_dir).expect("stale directory should exist");
+    write_managed_manifest(&plugins_dir, &[("tmux-stale", "tmux-stale", "tmux-stale")]);
     write_file(
         &plugins_dir.join("tmux-dirty").join("plugin.txt"),
         "dirty-local\n",
@@ -188,6 +193,58 @@ fn sync_continues_after_an_update_failure_and_still_installs_missing_plugins() {
         "dirty-local\n"
     );
     assert!(!stale_dir.exists(), "stale directory should be removed");
+}
+
+#[test]
+fn sync_preserves_unmanaged_undeclared_plugin_directories() {
+    let workspace = unique_temp_dir("sync-preserve-unmanaged");
+    let author_repo = workspace.join("author").join("tmux-sensible");
+    let bare_repo = workspace.join("remotes").join("tmux-sensible.git");
+    let config_path = workspace.join("config").join("tpm.yaml");
+    let plugins_dir = workspace.join("plugins");
+    let manual_dir = plugins_dir.join("tmux-manual");
+
+    init_repo(&author_repo);
+    write_file(&author_repo.join("plugin.txt"), "v1\n");
+    commit_all(&author_repo, "initial");
+    publish_repo(&author_repo, &bare_repo);
+
+    write_config(
+        &config_path,
+        &format!(
+            concat!(
+                "version: 1\n",
+                "paths:\n",
+                "  plugins: ../plugins\n",
+                "plugins:\n",
+                "- source: {}\n",
+            ),
+            bare_repo.display(),
+        ),
+    );
+    fs::create_dir_all(&manual_dir).expect("manual directory should exist");
+
+    let output = run_tpm(
+        &workspace,
+        [
+            "--config",
+            config_path.to_str().expect("config path should be utf-8"),
+            "sync",
+        ],
+    );
+
+    assert!(output.status.success(), "sync should succeed: {output:?}");
+    assert_eq!(
+        String::from_utf8(output.stdout).expect("stdout should be utf-8"),
+        format!(
+            "Installed tmux-sensible into {}\n",
+            plugins_dir.join("tmux-sensible").display(),
+        )
+    );
+    assert!(
+        manual_dir.is_dir(),
+        "sync should preserve unmanaged undeclared directories"
+    );
 }
 
 #[cfg(unix)]
@@ -264,6 +321,7 @@ fn sync_colorizes_interactive_terminal_output() {
     );
 
     fs::create_dir_all(&stale_dir).expect("stale directory should exist");
+    write_managed_manifest(&plugins_dir, &[("tmux-stale", "tmux-stale", "tmux-stale")]);
 
     write_file(&updated_repo.join("plugin.txt"), "update-v2\n");
     commit_all(&updated_repo, "second");

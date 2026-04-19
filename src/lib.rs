@@ -2,6 +2,7 @@ mod cli;
 mod commands;
 mod config;
 mod error;
+mod manifest;
 mod paths;
 mod plugin;
 mod tmux;

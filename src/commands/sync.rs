@@ -10,6 +10,7 @@ use crate::{
     commands::resolved_paths,
     config::{Config, PluginConfig},
     error::{AppError, Result},
+    manifest::ManagedManifest,
     paths::{ResolvedPaths, normalize_lexically},
     plugin,
     user_path::display_user_path,
@@ -123,6 +124,35 @@ pub(crate) fn ensure_directory(path: &Path) -> Result<()> {
         path: path.to_path_buf(),
         source,
     })
+}
+
+pub(crate) fn record_manifest_plugin(
+    manifest: &mut ManagedManifest,
+    paths: &ResolvedPaths,
+    plugin: &SyncPlugin,
+) -> Result<bool> {
+    manifest.record_plugin(
+        &paths.plugins_dir,
+        &plugin.install_name,
+        &plugin.source,
+        &plugin.clone_source,
+        &plugin.install_dir,
+    )
+}
+
+pub(crate) fn adopt_configured_plugins(
+    manifest: &mut ManagedManifest,
+    paths: &ResolvedPaths,
+    plugins: &[SyncPlugin],
+) -> Result<bool> {
+    let mut changed = false;
+    for plugin in plugins {
+        if validate_managed_checkout(&plugin.install_dir, &plugin.clone_source).is_ok() {
+            changed |= record_manifest_plugin(manifest, paths, plugin)?;
+        }
+    }
+
+    Ok(changed)
 }
 
 pub(crate) fn git<I, S>(

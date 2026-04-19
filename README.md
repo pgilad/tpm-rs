@@ -137,9 +137,9 @@ bind M-u run-shell "tpm cleanup"
 | `load` | Run enabled installed plugin entrypoints inside tmux |
 | `install` | Install configured plugins from `tpm.yaml` |
 | `update [plugin...]` | Update installed plugins |
-| `sync` | Clean up stale plugin directories, install missing plugins, and update existing ones efficiently |
+| `sync` | Remove stale managed plugin directories, install missing plugins, and update existing ones efficiently |
 | `self-update` | Update the installed `tpm` binary from the latest release |
-| `cleanup` | Remove undeclared plugin directories |
+| `cleanup` | Remove stale managed plugin directories that are no longer declared |
 | `list [--json]` | List configured plugins and installation state |
 | `doctor [--json]` | Validate config, tool availability, and resolved paths |
 | `add SOURCE [--branch BRANCH] [--ref REF] [--skip-install]` | Add a plugin to `tpm.yaml`, creating it if needed, and install it by default |
@@ -222,13 +222,19 @@ Additional environment overrides:
 
 Config rewrites are deterministic, but commands that rewrite `tpm.yaml` do not preserve YAML comments or original formatting.
 
+## Managed Plugin Manifest
+
+`tpm` tracks checkouts it installed or validated in `<plugins-dir>/.tpm-rs/managed.yaml`. `tpm sync` and `tpm cleanup` only delete stale directories recorded in that manifest, so manually added directories under the plugins directory are preserved.
+
+`tpm install` and `tpm update` write manifest entries after installing, validating, or updating selected configured checkouts. `tpm sync` and `tpm cleanup` also adopt existing configured checkouts after validating that their Git remote matches `tpm.yaml`. A manually deleted configured checkout is reinstalled by `tpm sync` or `tpm install`; a manually added undeclared directory is left alone unless it is explicitly recorded in the managed manifest.
+
 ## Automation-Friendly Output
 
 - `tpm paths --json`, `tpm list --json`, and `tpm doctor --json` emit pretty-printed JSON.
 - `tpm install`, `tpm update`, and `tpm sync` emit stable line-oriented stdout that is suitable for scripts when stdout is not a terminal.
 - Interactive `tpm install` now shows live per-plugin progress and a final summary on the terminal stream instead of waiting to print everything at the end.
 - `tpm add` emits the normal `add` line followed by the `install` line for the added plugin.
-- `tpm add --skip-install` only rewrites `tpm.yaml`.
+- `tpm add --skip-install` only rewrites `tpm.yaml` and does not update the managed plugin manifest.
 - `tpm self-update` emits stable line-oriented stdout for update and no-op outcomes.
 - `tpm load` stays silent on success.
 - When `tpm load` runs inside tmux, it overwrites a per-server log file at `${XDG_STATE_HOME:-$HOME/.local/state}/tpm/load-<sha256(socket-path)>.log` with plugin discovery, load events, and timing.

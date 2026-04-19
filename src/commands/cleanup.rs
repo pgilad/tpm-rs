@@ -7,11 +7,11 @@ use std::{
 use crate::{
     commands::{
         progress::{ProgressStream, TerminalTheme},
-        resolved_paths,
+        resolved_paths, sync,
     },
     config::Config,
     error::{AppError, Result},
-    plugin,
+    manifest::{self, ManagedManifest},
     user_path::display_user_path,
 };
 
@@ -24,13 +24,25 @@ pub fn run(config_override: Option<&Path>, plugins_override: Option<&Path>) -> R
             path: paths.config_file.clone(),
         })?;
 
-    let declared = config
+    let configured = config
         .plugins
         .iter()
-        .map(|plugin_config| plugin::install_name(&plugin_config.source).map(PathBuf::from))
-        .collect::<Result<BTreeSet<_>>>()?;
+        .map(|plugin_config| sync::configured_plugin(&paths, plugin_config))
+        .collect::<Result<Vec<_>>>()?;
+    let declared = configured
+        .iter()
+        .map(|plugin| plugin.install_name.clone())
+        .collect::<BTreeSet<_>>();
 
-    let report = cleanup_plugins_dir(&paths.plugins_dir, &declared)?;
+    let mut manifest = ManagedManifest::load_or_default(&paths.plugins_dir)?;
+    let mut manifest_changed = sync::adopt_configured_plugins(&mut manifest, &paths, &configured)?;
+    let report = cleanup_plugins_dir(&paths.plugins_dir, &declared, &mut manifest)?;
+    manifest_changed |= report.manifest_changed;
+    if paths.plugins_dir.exists()
+        && (manifest_changed || !manifest::manifest_path(&paths.plugins_dir).exists())
+    {
+        manifest.save(&paths.plugins_dir)?;
+    }
     print_report(&report);
 
     if report.failed.is_empty() {
@@ -48,11 +60,13 @@ pub(crate) struct CleanupReport {
     pub(crate) removed: Vec<PathBuf>,
     pub(crate) preserved: Vec<PathBuf>,
     pub(crate) failed: Vec<(PathBuf, io::Error)>,
+    pub(crate) manifest_changed: bool,
 }
 
 pub(crate) fn cleanup_plugins_dir(
     plugins_dir: &Path,
-    declared: &BTreeSet<PathBuf>,
+    declared: &BTreeSet<String>,
+    manifest: &mut ManagedManifest,
 ) -> Result<CleanupReport> {
     if !plugins_dir.exists() {
         return Ok(CleanupReport::default());
@@ -65,18 +79,23 @@ pub(crate) fn cleanup_plugins_dir(
         });
     }
 
-    let mut stale_directories = Vec::new();
-    let mut preserved = Vec::new();
+    let declared_manifest_paths = manifest
+        .entries()
+        .filter(|(install_name, _)| declared.contains(*install_name))
+        .map(|(_, plugin)| manifest::entry_install_dir(plugins_dir, plugin))
+        .collect::<Result<BTreeSet<_>>>()?;
 
-    collect_cleanup_targets(
-        plugins_dir,
-        Path::new(""),
-        declared,
-        &mut stale_directories,
-        &mut preserved,
-    )?;
+    let mut stale_directories = manifest
+        .entries()
+        .filter(|(install_name, _)| !declared.contains(*install_name))
+        .map(|(install_name, plugin)| {
+            manifest::entry_install_dir(plugins_dir, plugin)
+                .map(|path| (install_name.clone(), plugin.path.clone(), path))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    stale_directories.sort_by(|left, right| left.1.cmp(&right.1));
 
-    stale_directories.sort_by(|left, right| left.0.cmp(&right.0));
+    let mut preserved = legacy_preserved_paths(plugins_dir, declared);
     preserved.sort();
 
     let mut report = CleanupReport {
@@ -84,10 +103,39 @@ pub(crate) fn cleanup_plugins_dir(
         ..CleanupReport::default()
     };
 
-    for (_, path) in stale_directories {
+    for (install_name, _, path) in stale_directories {
+        if install_name == LEGACY_TPM_INSTALL_NAME
+            || path == plugins_dir.join(LEGACY_TPM_INSTALL_NAME)
+        {
+            manifest.remove(&install_name);
+            report.manifest_changed = true;
+            continue;
+        }
+
+        if declared_manifest_paths.contains(&path) {
+            manifest.remove(&install_name);
+            report.manifest_changed = true;
+            continue;
+        }
+
+        if !path.exists() {
+            manifest.remove(&install_name);
+            report.manifest_changed = true;
+            continue;
+        }
+
+        if !path.is_dir() {
+            report
+                .failed
+                .push((path, io::Error::other("expected a directory")));
+            continue;
+        }
+
         match fs::remove_dir_all(&path) {
             Ok(()) => {
                 prune_empty_parent_dirs(path.parent(), plugins_dir);
+                manifest.remove(&install_name);
+                report.manifest_changed = true;
                 report.removed.push(path);
             }
             Err(source) => report.failed.push((path, source)),
@@ -97,67 +145,17 @@ pub(crate) fn cleanup_plugins_dir(
     Ok(report)
 }
 
-fn collect_cleanup_targets(
-    plugins_dir: &Path,
-    relative_dir: &Path,
-    declared: &BTreeSet<PathBuf>,
-    stale_directories: &mut Vec<(String, PathBuf)>,
-    preserved: &mut Vec<PathBuf>,
-) -> Result<()> {
-    let current_dir = if relative_dir.as_os_str().is_empty() {
-        plugins_dir.to_path_buf()
-    } else {
-        plugins_dir.join(relative_dir)
-    };
-
-    let entries = fs::read_dir(&current_dir).map_err(|source| AppError::InspectPath {
-        path: current_dir.clone(),
-        source,
-    })?;
-
-    for entry in entries {
-        let entry = entry.map_err(|source| AppError::InspectPath {
-            path: current_dir.clone(),
-            source,
-        })?;
-        let path = entry.path();
-        let file_type = entry.file_type().map_err(|source| AppError::InspectPath {
-            path: path.clone(),
-            source,
-        })?;
-
-        if !file_type.is_dir() {
-            continue;
-        }
-
-        let relative_path = relative_dir.join(entry.file_name());
-        if relative_path == Path::new(LEGACY_TPM_INSTALL_NAME) {
-            preserved.push(path);
-            continue;
-        }
-
-        if declared.contains(&relative_path) {
-            continue;
-        }
-
-        if declared
-            .iter()
-            .any(|declared_path| declared_path.starts_with(&relative_path))
-        {
-            collect_cleanup_targets(
-                plugins_dir,
-                &relative_path,
-                declared,
-                stale_directories,
-                preserved,
-            )?;
-            continue;
-        }
-
-        stale_directories.push((relative_path.display().to_string(), path));
+fn legacy_preserved_paths(plugins_dir: &Path, declared: &BTreeSet<String>) -> Vec<PathBuf> {
+    if declared.contains(LEGACY_TPM_INSTALL_NAME) {
+        return Vec::new();
     }
 
-    Ok(())
+    let path = plugins_dir.join(LEGACY_TPM_INSTALL_NAME);
+    if path.is_dir() {
+        vec![path]
+    } else {
+        Vec::new()
+    }
 }
 
 fn prune_empty_parent_dirs(path: Option<&Path>, plugins_dir: &Path) {

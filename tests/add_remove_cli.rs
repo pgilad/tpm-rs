@@ -2,18 +2,24 @@ use std::fs;
 
 mod support;
 
-use support::{commit_all, init_repo, publish_repo, run_tpm, unique_temp_dir, write_file};
+use support::{
+    commit_all, init_repo, managed_manifest_path, publish_repo, run_tpm, unique_temp_dir,
+    write_file,
+};
 
 #[test]
 fn add_with_skip_install_creates_config_with_reference() {
     let workspace = unique_temp_dir("add-create");
     let config_path = workspace.join("config").join("tpm.yaml");
+    let plugins_dir = workspace.join("plugins");
 
     let output = run_tpm(
         &workspace,
         [
             "--config",
             config_path.to_str().expect("config path should be utf-8"),
+            "--plugins-dir",
+            plugins_dir.to_str().expect("plugins dir should be utf-8"),
             "add",
             "catppuccin/tmux",
             "--ref",
@@ -41,6 +47,10 @@ fn add_with_skip_install_creates_config_with_reference() {
             "- source: catppuccin/tmux\n",
             "  ref: v2.1.3\n",
         )
+    );
+    assert!(
+        !managed_manifest_path(&plugins_dir).exists(),
+        "add --skip-install should not create the managed manifest"
     );
 }
 
@@ -136,6 +146,10 @@ fn add_creates_config_and_installs_by_default() {
             .expect("installed file should be readable"),
         "open\n"
     );
+    let manifest =
+        fs::read_to_string(managed_manifest_path(&plugins_dir)).expect("manifest should exist");
+    assert!(manifest.contains("tmux-open:"));
+    assert!(manifest.contains("path: tmux-open"));
 }
 
 #[test]
@@ -299,6 +313,14 @@ fn add_installs_only_the_added_plugin_by_default() {
         fs::read_to_string(plugins_dir.join("tmux-open").join("plugin.txt"))
             .expect("installed file should be readable"),
         "open\n"
+    );
+    let manifest =
+        fs::read_to_string(managed_manifest_path(&plugins_dir)).expect("manifest should exist");
+    assert!(manifest.contains("tmux-open:"));
+    assert!(manifest.contains("path: tmux-open"));
+    assert!(
+        !manifest.contains("tmux-sensible:"),
+        "add should not mark unrelated configured plugins as managed"
     );
     assert!(
         !plugins_dir.join("tmux-sensible").exists(),

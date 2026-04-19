@@ -55,6 +55,29 @@ pub enum AppError {
     CurrentExecutable(#[source] io::Error),
     #[error("invalid config `{}`: {message}", display_user_path(path))]
     InvalidConfig { path: PathBuf, message: String },
+    #[error(
+        "failed to read managed plugin manifest `{}`: {source}",
+        display_user_path(path)
+    )]
+    ReadManifest {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error(
+        "failed to write managed plugin manifest `{}`: {source}",
+        display_user_path(path)
+    )]
+    WriteManifest {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error(
+        "invalid managed plugin manifest `{}`: {message}",
+        display_user_path(path)
+    )]
+    InvalidManifest { path: PathBuf, message: String },
     #[error("failed to serialize config `{}`: {source}", display_user_path(path))]
     SerializeConfig {
         path: PathBuf,
@@ -109,6 +132,7 @@ impl AppError {
     pub fn exit_code(&self) -> ExitCode {
         match self {
             Self::InvalidConfig { .. }
+            | Self::InvalidManifest { .. }
             | Self::ConfigNotFound { .. }
             | Self::InvalidPluginSource { .. }
             | Self::PluginAlreadyConfigured { .. }
@@ -126,6 +150,8 @@ impl AppError {
             | Self::InspectPath { .. }
             | Self::CurrentDirectory(_)
             | Self::CurrentExecutable(_)
+            | Self::ReadManifest { .. }
+            | Self::WriteManifest { .. }
             | Self::SerializeConfig { .. }
             | Self::Json(_)
             | Self::SelfUpdatePath { .. }

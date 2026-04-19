@@ -13,6 +13,7 @@ use crate::{
         sync::{self, SyncPlugin},
     },
     error::{AppError, Result},
+    manifest::ManagedManifest,
     paths::ResolvedPaths,
 };
 
@@ -213,21 +214,27 @@ pub(crate) fn run_plugins(paths: &ResolvedPaths, plugins: &[SyncPlugin]) -> Resu
     let ui = UpdateUi::detect();
     ui.begin(&paths.plugins_dir, plugins.len());
 
+    let mut manifest = ManagedManifest::load_or_default(&paths.plugins_dir)?;
+    let mut manifest_changed = false;
     let mut report = UpdateReport::default();
     for (index, plugin) in plugins.iter().enumerate() {
         ui.start_plugin(index + 1, plugins.len(), &plugin.install_name);
 
         let event = match update_plugin(plugin) {
             Ok(UpdateOutcome::Updated(path)) => {
+                manifest_changed |= sync::record_manifest_plugin(&mut manifest, paths, plugin)?;
                 UpdateEvent::Updated(plugin.install_name.clone(), path)
             }
             Ok(UpdateOutcome::AlreadyCurrent(path)) => {
+                manifest_changed |= sync::record_manifest_plugin(&mut manifest, paths, plugin)?;
                 UpdateEvent::AlreadyCurrent(plugin.install_name.clone(), path)
             }
             Ok(UpdateOutcome::Pinned(path, reference)) => {
+                manifest_changed |= sync::record_manifest_plugin(&mut manifest, paths, plugin)?;
                 UpdateEvent::Pinned(plugin.install_name.clone(), path, reference)
             }
             Ok(UpdateOutcome::RealignedPinned(path, reference)) => {
+                manifest_changed |= sync::record_manifest_plugin(&mut manifest, paths, plugin)?;
                 UpdateEvent::RealignedPinned(plugin.install_name.clone(), path, reference)
             }
             Err(error) => UpdateEvent::Failed(plugin.install_name.clone(), error),
@@ -238,6 +245,9 @@ pub(crate) fn run_plugins(paths: &ResolvedPaths, plugins: &[SyncPlugin]) -> Resu
     }
 
     ui.finish(&report);
+    if manifest_changed {
+        manifest.save(&paths.plugins_dir)?;
+    }
 
     if report.failed_count == 0 {
         Ok(())

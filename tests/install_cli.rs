@@ -3,7 +3,8 @@ use std::fs;
 mod support;
 
 use support::{
-    commit_all, git, init_repo, publish_repo, run_git, run_tpm, unique_temp_dir, write_file,
+    commit_all, git, init_repo, managed_manifest_path, publish_repo, run_git, run_tpm,
+    unique_temp_dir, write_file,
 };
 
 #[cfg(unix)]
@@ -97,6 +98,10 @@ fn install_clones_configured_plugins_and_skips_existing_checkouts() {
             .expect("installed file should be readable"),
         "v1\n"
     );
+    let manifest =
+        fs::read_to_string(managed_manifest_path(&plugins_dir)).expect("manifest should exist");
+    assert!(manifest.contains("tmux-sensible:"));
+    assert!(manifest.contains("path: tmux-sensible"));
 
     let output = run_tpm(
         &workspace,
@@ -122,6 +127,10 @@ fn install_clones_configured_plugins_and_skips_existing_checkouts() {
         String::from_utf8(output.stderr).expect("stderr should be utf-8"),
         ""
     );
+    let manifest =
+        fs::read_to_string(managed_manifest_path(&plugins_dir)).expect("manifest should exist");
+    assert!(manifest.contains("tmux-sensible:"));
+    assert!(manifest.contains("path: tmux-sensible"));
 }
 
 #[test]
@@ -343,6 +352,12 @@ fn install_preserves_plugin_output_order_for_mixed_outcomes() {
         String::from_utf8(output.stderr).expect("stderr should be utf-8"),
         ""
     );
+    let manifest =
+        fs::read_to_string(managed_manifest_path(&plugins_dir)).expect("manifest should exist");
+    assert!(manifest.contains("tmux-first:"));
+    assert!(manifest.contains("path: tmux-first"));
+    assert!(manifest.contains("tmux-second:"));
+    assert!(manifest.contains("path: tmux-second"));
 }
 
 #[cfg(unix)]
@@ -564,5 +579,9 @@ fn install_rejects_existing_checkouts_from_a_different_source() {
         fs::read_to_string(existing_checkout.join("plugin.txt"))
             .expect("existing checkout should remain readable"),
         "unexpected\n"
+    );
+    assert!(
+        !managed_manifest_path(&plugins_dir).exists(),
+        "failed installs should not create an empty managed manifest"
     );
 }
