@@ -66,7 +66,7 @@ impl Config {
         })?;
 
         let config: Self =
-            serde_yaml::from_str(&raw).map_err(|source| AppError::InvalidConfig {
+            serde_norway::from_str(&raw).map_err(|source| AppError::InvalidConfig {
                 path: normalize_lexically(path),
                 message: source.to_string(),
             })?;
@@ -90,7 +90,7 @@ impl Config {
         }
 
         let mut serialized =
-            serde_yaml::to_string(self).map_err(|source| AppError::SerializeConfig {
+            serde_norway::to_string(self).map_err(|source| AppError::SerializeConfig {
                 path: path.clone(),
                 source,
             })?;

@@ -82,7 +82,7 @@ pub enum AppError {
     SerializeConfig {
         path: PathBuf,
         #[source]
-        source: serde_yaml::Error,
+        source: serde_norway::Error,
     },
     #[error("invalid plugin source `{plugin_source}`: {message}")]
     InvalidPluginSource {

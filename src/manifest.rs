@@ -47,7 +47,7 @@ impl ManagedManifest {
             source,
         })?;
         let manifest: Self =
-            serde_yaml::from_str(&raw).map_err(|source| AppError::InvalidManifest {
+            serde_norway::from_str(&raw).map_err(|source| AppError::InvalidManifest {
                 path: path.clone(),
                 message: source.to_string(),
             })?;
@@ -70,7 +70,7 @@ impl ManagedManifest {
         }
 
         let mut serialized =
-            serde_yaml::to_string(self).map_err(|source| AppError::InvalidManifest {
+            serde_norway::to_string(self).map_err(|source| AppError::InvalidManifest {
                 path: path.clone(),
                 message: source.to_string(),
             })?;
