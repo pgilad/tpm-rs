@@ -373,11 +373,13 @@ pub fn normalize_lexically(path: &Path) -> PathBuf {
             Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
             Component::RootDir => normalized.push(Path::new("/")),
             Component::CurDir => {}
-            Component::ParentDir => {
-                if !normalized.pop() && !absolute {
-                    normalized.push("..");
+            Component::ParentDir => match normalized.components().next_back() {
+                Some(Component::Normal(_)) => {
+                    normalized.pop();
                 }
-            }
+                Some(Component::ParentDir) | None if !absolute => normalized.push(".."),
+                _ => {}
+            },
             Component::Normal(part) => normalized.push(part),
         }
     }
@@ -415,7 +417,9 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::{EnvProvider, ResolveOptions, resolve_base_with_env, resolve_with_env};
+    use super::{
+        EnvProvider, ResolveOptions, normalize_lexically, resolve_base_with_env, resolve_with_env,
+    };
 
     #[test]
     fn resolves_default_xdg_paths_without_config() {
@@ -542,6 +546,26 @@ plugins: []
         .expect("paths should resolve");
 
         assert_eq!(resolved.plugins_dir, cli_override);
+    }
+
+    #[test]
+    fn normalize_preserves_leading_relative_parent_components() {
+        assert_eq!(
+            normalize_lexically(Path::new("../../plugins")),
+            PathBuf::from("../../plugins")
+        );
+    }
+
+    #[test]
+    fn normalize_collapses_parent_components_after_normal_segments() {
+        assert_eq!(
+            normalize_lexically(Path::new("vendor/../plugins/./tmux-open")),
+            PathBuf::from("plugins/tmux-open")
+        );
+        assert_eq!(
+            normalize_lexically(Path::new("vendor/plugins/../../..")),
+            PathBuf::from("..")
+        );
     }
 
     #[derive(Default)]
