@@ -367,6 +367,53 @@ fn installer_prints_summary_and_shell_specific_path_hint() {
 }
 
 #[test]
+fn installer_does_not_clobber_a_preexisting_fixed_temp_path() {
+    let workspace = unique_temp_dir("installer-preexisting-temp");
+    let releases_dir = workspace.join("releases");
+    let install_dir = workspace.join("bin");
+    let target = "x86_64-unknown-linux-gnu";
+
+    fs::create_dir_all(&install_dir).expect("install dir should be created");
+    write_file(&install_dir.join("tpm.tmp"), "sentinel\n");
+    create_release_asset(
+        &releases_dir,
+        "v1.0.0",
+        target,
+        &format!("tpm-{target}"),
+        "installed",
+    );
+
+    let output = run_installer(
+        &install_script_path(),
+        &workspace,
+        [
+            "--dir",
+            install_dir.to_str().expect("install dir should be utf-8"),
+            "--version",
+            "v1.0.0",
+            "--target",
+            target,
+        ],
+        default_installer_envs(&workspace, &releases_dir),
+    );
+
+    assert!(
+        output.status.success(),
+        "install should succeed: {}",
+        describe_output(&output)
+    );
+    assert_eq!(
+        fs::read_to_string(install_dir.join("tpm")).expect("installed tpm should be readable"),
+        "installed\n"
+    );
+    assert_eq!(
+        fs::read_to_string(install_dir.join("tpm.tmp"))
+            .expect("fixed temp sentinel should remain readable"),
+        "sentinel\n"
+    );
+}
+
+#[test]
 fn installer_requires_a_checksum_tool() {
     let workspace = unique_temp_dir("installer-checksum-required");
     let fake_bin = workspace.join("fake-bin");
