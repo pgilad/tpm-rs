@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT" /></a>
-  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-1.94.1-orange.svg" alt="Rust 1.94.1" /></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-1.95.0-orange.svg" alt="Rust 1.95.0" /></a>
   <a href="https://github.com/tmux/tmux"><img src="https://img.shields.io/badge/tmux-3.2%2B-1BB91F.svg" alt="tmux 3.2+" /></a>
   <img src="https://img.shields.io/badge/layout-XDG--first-0A7EA4.svg" alt="XDG-first layout" />
 </p>

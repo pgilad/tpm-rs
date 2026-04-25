@@ -6,7 +6,7 @@ license = "MIT"
 description = "A Rust CLI replacement for tmux plugin manager"
 repository = "https://github.com/pgilad/tpm-rs"
 readme = "README.md"
-rust-version = "1.94.1"
+rust-version = "1.95.0"
 default-run = "tpm"
 
 [dependencies]
