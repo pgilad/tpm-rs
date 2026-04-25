@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.04.19-20
+
+- Add managed plugin manifest (f975fd0)
+- Add manifest corruption coverage (9c2e1fa)
+
 ## 2026.04.19-19
 
 - Make config writes atomic (d5f5e56)
