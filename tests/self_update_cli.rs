@@ -56,6 +56,58 @@ fn self_update_replaces_the_running_binary_when_a_newer_release_exists() {
 }
 
 #[test]
+fn self_update_does_not_clobber_a_preexisting_fixed_temp_path() {
+    let workspace = unique_temp_dir("self-update-preexisting-temp");
+    let releases_dir = workspace.join("releases");
+    let installed_binary = install_test_binary(&workspace);
+    let fixed_temp_path = installed_binary
+        .parent()
+        .expect("installed binary should have a parent")
+        .join(".tpm.tmp");
+    fs::write(&fixed_temp_path, "sentinel\n").expect("sentinel temp path should be writable");
+    let current_version = binary_version(&installed_binary);
+
+    write_release_asset(
+        &releases_dir,
+        "test-target",
+        "2099.01.01-1",
+        "updated-release",
+    );
+
+    let output = run_binary_with_env(
+        &installed_binary,
+        &workspace,
+        ["self-update"],
+        [
+            (
+                "TPM_INSTALL_BASE_URL",
+                releases_dir
+                    .to_str()
+                    .expect("releases path should be utf-8"),
+            ),
+            ("TPM_SELF_UPDATE_TARGET", "test-target"),
+        ],
+    );
+
+    assert!(
+        output.status.success(),
+        "self-update should succeed: {output:?}"
+    );
+    assert_eq!(
+        String::from_utf8(output.stdout).expect("stdout should be utf-8"),
+        format!(
+            "Updated tpm from {current_version} to 2099.01.01-1 at {}\n",
+            installed_binary.display()
+        )
+    );
+    assert_eq!(binary_version(&installed_binary), "2099.01.01-1");
+    assert_eq!(
+        fs::read_to_string(&fixed_temp_path).expect("sentinel temp path should remain readable"),
+        "sentinel\n"
+    );
+}
+
+#[test]
 fn self_update_reports_when_the_current_binary_is_already_latest() {
     let workspace = unique_temp_dir("self-update-current");
     let releases_dir = workspace.join("releases");

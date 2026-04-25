@@ -1,5 +1,7 @@
 use std::{
-    env, fs,
+    env,
+    ffi::{OsStr, OsString},
+    fs::{self, OpenOptions},
     io::{self, Read},
     path::{Path, PathBuf},
     process::{self, Command, Output},
@@ -303,13 +305,15 @@ fn replace_executable(replacement: &Path, destination: &Path) -> Result<()> {
                 display_user_path(destination)
             ),
         })?
-        .to_string_lossy();
-    let temporary_path = parent.join(format!(".{file_name}.tmp"));
+        .to_os_string();
+    let (temporary_path, mut temporary_file) =
+        create_temporary_replacement_file(parent, &file_name)?;
 
-    fs::copy(replacement, &temporary_path).map_err(|source| AppError::SelfUpdatePath {
-        path: temporary_path.clone(),
-        source,
-    })?;
+    if let Err(error) = copy_replacement_file(replacement, &temporary_path, &mut temporary_file) {
+        drop(temporary_file);
+        let _ = fs::remove_file(&temporary_path);
+        return Err(error);
+    }
 
     let permissions = fs::metadata(replacement)
         .map_err(|source| AppError::SelfUpdatePath {
@@ -317,13 +321,24 @@ fn replace_executable(replacement: &Path, destination: &Path) -> Result<()> {
             source,
         })?
         .permissions();
-    if let Err(source) = fs::set_permissions(&temporary_path, permissions) {
+    if let Err(source) = temporary_file.set_permissions(permissions) {
+        drop(temporary_file);
         let _ = fs::remove_file(&temporary_path);
         return Err(AppError::SelfUpdatePath {
             path: temporary_path,
             source,
         });
     }
+
+    if let Err(source) = temporary_file.sync_all() {
+        drop(temporary_file);
+        let _ = fs::remove_file(&temporary_path);
+        return Err(AppError::SelfUpdatePath {
+            path: temporary_path,
+            source,
+        });
+    }
+    drop(temporary_file);
 
     if let Err(source) = fs::rename(&temporary_path, destination) {
         let _ = fs::remove_file(&temporary_path);
@@ -336,6 +351,104 @@ fn replace_executable(replacement: &Path, destination: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn create_temporary_replacement_file(
+    parent: &Path,
+    file_name: &OsStr,
+) -> Result<(PathBuf, fs::File)> {
+    let mut last_collision = None;
+    for attempt in 0..16_u8 {
+        let mut temporary_name = OsString::from(".");
+        temporary_name.push(file_name);
+        temporary_name.push(format!(".tmp.{}", temporary_file_suffix(attempt)));
+        let temporary_path = parent.join(temporary_name);
+
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary_path)
+        {
+            Ok(file) => return Ok((temporary_path, file)),
+            Err(source) if source.kind() == io::ErrorKind::AlreadyExists => {
+                last_collision = Some(source);
+            }
+            Err(source) => {
+                return Err(AppError::SelfUpdatePath {
+                    path: temporary_path,
+                    source,
+                });
+            }
+        }
+    }
+
+    Err(AppError::SelfUpdate {
+        message: format!(
+            "could not allocate a temporary file under {}: {}",
+            display_user_path(parent),
+            last_collision.unwrap_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    "all temporary replacement file names collided",
+                )
+            })
+        ),
+    })
+}
+
+fn copy_replacement_file(
+    replacement: &Path,
+    temporary_path: &Path,
+    temporary_file: &mut fs::File,
+) -> Result<()> {
+    let mut replacement_file =
+        fs::File::open(replacement).map_err(|source| AppError::SelfUpdatePath {
+            path: replacement.to_path_buf(),
+            source,
+        })?;
+
+    io::copy(&mut replacement_file, temporary_file)
+        .map(|_| ())
+        .map_err(|source| AppError::SelfUpdatePath {
+            path: temporary_path.to_path_buf(),
+            source,
+        })
+}
+
+fn temporary_file_suffix(attempt: u8) -> String {
+    let mut bytes = [0_u8; 16];
+    if fill_random_bytes(&mut bytes).is_ok() {
+        return format!("{}-{attempt}", hex_bytes(&bytes));
+    }
+
+    let fallback = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    format!("{}-{fallback}-{attempt}", process::id())
+}
+
+#[cfg(unix)]
+fn fill_random_bytes(bytes: &mut [u8]) -> io::Result<()> {
+    fs::File::open("/dev/urandom")?.read_exact(bytes)
+}
+
+#[cfg(not(unix))]
+fn fill_random_bytes(_: &mut [u8]) -> io::Result<()> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "random temporary file suffix generation is unsupported on this platform",
+    ))
+}
+
+fn hex_bytes(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        output.push(HEX[(byte >> 4) as usize] as char);
+        output.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    output
 }
 
 enum DownloadCommandResult {
