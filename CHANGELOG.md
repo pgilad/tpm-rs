@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026.04.26-27
+
+- Harden self-update temp replacement (2c097ea)
+- Switch YAML parsing to serde_norway (ce8e9b3)
+- Avoid fixed installer temp path (f441bfa)
+- Preserve leading relative parent paths (06b156e)
+- Update to rust 1.95 (db615cb)
+
 ## 2026.04.19-20
 
 - Add managed plugin manifest (f975fd0)
