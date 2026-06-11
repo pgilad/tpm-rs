@@ -48,6 +48,18 @@ pub enum Command {
     /// Update the tpm CLI in place from the latest release
     #[command(name = "self-update")]
     SelfUpdate,
+    /// Summarize recent plugin load timings
+    Stats {
+        #[arg(
+            long,
+            default_value_t = 30,
+            value_parser = clap::value_parser!(u64).range(1..),
+            help = "Number of days of load history to summarize"
+        )]
+        days: u64,
+        #[arg(long)]
+        json: bool,
+    },
     /// Remove undeclared plugin directories
     Cleanup,
     /// List configured and installed plugins

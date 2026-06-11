@@ -9,6 +9,7 @@ mod paths;
 mod progress;
 mod remove;
 mod self_update;
+mod stats;
 mod sync;
 mod sync_cmd;
 mod update;
@@ -32,6 +33,12 @@ pub fn run(cli: Cli) -> Result<()> {
         }
         Command::Sync => sync_cmd::run(cli.config.as_deref(), cli.plugins_dir.as_deref()),
         Command::SelfUpdate => self_update::run(),
+        Command::Stats { days, json } => stats::run(
+            cli.config.as_deref(),
+            cli.plugins_dir.as_deref(),
+            days,
+            json,
+        ),
         Command::Cleanup => cleanup::run(cli.config.as_deref(), cli.plugins_dir.as_deref()),
         Command::List { json } => {
             list::run(cli.config.as_deref(), cli.plugins_dir.as_deref(), json)

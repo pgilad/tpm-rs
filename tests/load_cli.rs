@@ -517,6 +517,75 @@ fn load_does_not_write_a_server_log_outside_tmux() {
 }
 
 #[test]
+fn load_appends_history_record_with_version_and_plugin_timings() {
+    let workspace = unique_temp_dir("load-history");
+    let config_path = workspace.join("config").join("tpm.yaml");
+    let state_dir = workspace.join("state");
+
+    let plugin_repo = create_plugin_repo(
+        &workspace,
+        "tmux-history",
+        &[("history.tmux", "#!/bin/sh\nexit 0\n", true)],
+    );
+
+    write_config(
+        &config_path,
+        &["../remotes/tmux-history.git"],
+        Some("../plugins"),
+        None,
+    );
+
+    assert!(plugin_repo.exists());
+
+    let install = run_tpm(
+        &workspace,
+        [
+            "--config",
+            config_path.to_str().expect("config path should be utf-8"),
+            "install",
+        ],
+    );
+    assert!(
+        install.status.success(),
+        "install should succeed: {install:?}"
+    );
+
+    let output = run_tpm_with_env(
+        &workspace,
+        [
+            "--config",
+            config_path.to_str().expect("config path should be utf-8"),
+            "load",
+        ],
+        vec![("TPM_STATE_DIR".to_string(), state_dir.display().to_string())],
+    );
+
+    assert!(output.status.success(), "load should succeed: {output:?}");
+
+    let history_path = state_dir.join("load-history.jsonl");
+    let contents = fs::read_to_string(&history_path).expect("load history should be readable");
+    let lines = contents.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 1);
+
+    let record = serde_json::from_str::<serde_json::Value>(lines[0])
+        .expect("load history record should be valid json");
+    assert_eq!(record["schema"].as_u64(), Some(1));
+    let expected_version = option_env!("TPM_RELEASE_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"));
+    assert_eq!(record["tpm_version"].as_str(), Some(expected_version));
+    assert!(record["started_at"].as_u64().is_some_and(|value| value > 0));
+    assert!(record["total_ms"].as_u64().is_some());
+    assert_eq!(record["success"].as_bool(), Some(true));
+
+    let plugins = record["plugins"]
+        .as_array()
+        .expect("plugins should be an array");
+    assert_eq!(plugins.len(), 1);
+    assert_eq!(plugins[0]["name"].as_str(), Some("tmux-history"));
+    assert!(plugins[0]["ms"].as_u64().is_some());
+    assert_eq!(plugins[0]["success"].as_bool(), Some(true));
+}
+
+#[test]
 fn load_writes_failure_details_to_the_server_log() {
     let workspace = unique_temp_dir("load-server-log-failure");
     let config_path = workspace.join("config").join("tpm.yaml");

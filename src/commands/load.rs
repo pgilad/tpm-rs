@@ -13,8 +13,10 @@ use crate::{
     commands::resolved_paths,
     config::Config,
     error::{AppError, Result},
+    load_history::{self, LoadHistoryPlugin, LoadHistoryRecord},
     plugin, tmux,
     user_path::display_user_path,
+    version,
 };
 
 const TMUX_PLUGIN_MANAGER_PATH: &str = "TMUX_PLUGIN_MANAGER_PATH";
@@ -68,6 +70,7 @@ pub fn run(config_override: Option<&Path>, plugins_override: Option<&Path>) -> R
 }
 
 fn run_inner(config_override: Option<&Path>, plugins_override: Option<&Path>) -> Result<()> {
+    let started_at = unix_timestamp();
     let load_started = Instant::now();
     let paths = resolved_paths(config_override, plugins_override)?;
     let config =
@@ -88,30 +91,58 @@ fn run_inner(config_override: Option<&Path>, plugins_override: Option<&Path>) ->
         .filter(|plugin| plugin.enabled)
         .collect::<Vec<_>>();
     logger.log_line(format!("enabled plugins: {}", enabled_plugins.len()));
+    let mut history_plugins = Vec::with_capacity(enabled_plugins.len());
 
     for plugin_config in enabled_plugins {
         let name = plugin::install_name(&plugin_config.source)?;
         let install_dir = plugin::install_dir(&paths.plugins_dir, &plugin_config.source)?;
 
-        if let Err(detail) = load_plugin(&name, &install_dir, &manager_path, &mut logger) {
+        let plugin_started = Instant::now();
+        let result = load_plugin(&name, &install_dir, &manager_path, &mut logger);
+        let success = result.is_ok();
+        history_plugins.push(LoadHistoryPlugin {
+            name: name.clone(),
+            ms: load_history::duration_millis(plugin_started.elapsed()),
+            success,
+        });
+
+        if let Err(detail) = result {
             report.failures.push(LoadFailure::plugin(name, detail));
         }
     }
 
     print_report(&report);
 
-    if report.failures.is_empty() {
+    let total_elapsed = load_started.elapsed();
+    let success = report.failures.is_empty();
+    if success {
         logger.log_line(format!(
             "load completed successfully in {}",
-            format_duration(load_started.elapsed())
+            format_duration(total_elapsed)
         ));
-        Ok(())
     } else {
         logger.log_line(format!(
             "load completed with {} failed operations in {}",
             report.failures.len(),
-            format_duration(load_started.elapsed())
+            format_duration(total_elapsed)
         ));
+    }
+
+    load_history::append(
+        &paths.state_dir,
+        &LoadHistoryRecord {
+            schema: load_history::SCHEMA_VERSION,
+            tpm_version: version::DISPLAY_VERSION.to_string(),
+            started_at,
+            total_ms: load_history::duration_millis(total_elapsed),
+            success,
+            plugins: history_plugins,
+        },
+    );
+
+    if success {
+        Ok(())
+    } else {
         let _ = tmux::display_message(&tmux_failure_message(&report));
         Err(AppError::CommandFailed {
             command: "load",
