@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.06.11-73
+
+- Add load stats command (2290821)
+- Bump Rust toolchain to 1.96.0 (e073bc0)
+
 ## 2026.04.26-27
 
 - Harden self-update temp replacement (2c097ea)
