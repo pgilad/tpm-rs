@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.06.28-90
+
+- chore(deps): update Rust dependencies (6d39dff)
+
 ## 2026.06.11-73
 
 - Add load stats command (2290821)
