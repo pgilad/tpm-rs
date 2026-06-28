@@ -13,6 +13,7 @@ use crate::{
     commands::resolved_paths,
     config::Config,
     error::{AppError, Result},
+    hex,
     load_history::{self, LoadHistoryPlugin, LoadHistoryRecord},
     plugin, tmux,
     user_path::display_user_path,
@@ -361,7 +362,7 @@ fn load_log_path(state_dir: &Path) -> Option<PathBuf> {
     let server_socket = tmux_server_socket()?;
     let mut hasher = Sha256::new();
     hasher.update(server_socket.as_bytes());
-    let hash = format!("{:x}", hasher.finalize());
+    let hash = hex::lower(hasher.finalize());
     Some(state_dir.join(format!("load-{hash}.log")))
 }
 

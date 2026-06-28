@@ -14,6 +14,7 @@ use tar::Archive;
 
 use crate::{
     error::{AppError, Result},
+    hex,
     user_path::display_user_path,
     version::{self, VersionStatus},
 };
@@ -232,7 +233,7 @@ fn sha256_file(path: &Path) -> Result<String> {
         digest.update(&buffer[..read]);
     }
 
-    Ok(format!("{:x}", digest.finalize()))
+    Ok(hex::lower(digest.finalize()))
 }
 
 fn extract_archive(archive_path: &Path, destination: &Path) -> Result<()> {
@@ -418,7 +419,7 @@ fn copy_replacement_file(
 fn temporary_file_suffix(attempt: u8) -> String {
     let mut bytes = [0_u8; 16];
     if fill_random_bytes(&mut bytes).is_ok() {
-        return format!("{}-{attempt}", hex_bytes(&bytes));
+        return format!("{}-{attempt}", hex::lower(bytes));
     }
 
     let fallback = SystemTime::now()
@@ -439,16 +440,6 @@ fn fill_random_bytes(_: &mut [u8]) -> io::Result<()> {
         io::ErrorKind::Unsupported,
         "random temporary file suffix generation is unsupported on this platform",
     ))
-}
-
-fn hex_bytes(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut output = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        output.push(HEX[(byte >> 4) as usize] as char);
-        output.push(HEX[(byte & 0x0f) as usize] as char);
-    }
-    output
 }
 
 enum DownloadCommandResult {

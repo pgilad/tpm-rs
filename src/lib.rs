@@ -2,6 +2,7 @@ mod cli;
 mod commands;
 mod config;
 mod error;
+mod hex;
 mod load_history;
 mod manifest;
 mod paths;

@@ -7,8 +7,8 @@ use sha2::{Digest, Sha256};
 mod support;
 
 use support::{
-    commit_all, init_repo, prepend_path, publish_repo, run_tpm, run_tpm_with_env, set_executable,
-    unique_temp_dir, write_file,
+    commit_all, hex_bytes, init_repo, prepend_path, publish_repo, run_tpm, run_tpm_with_env,
+    set_executable, unique_temp_dir, write_file,
 };
 
 #[test]
@@ -694,6 +694,6 @@ fn write_config(
 fn load_server_log_path(state_dir: &Path, server_socket: &str) -> PathBuf {
     let mut hasher = Sha256::new();
     hasher.update(server_socket.as_bytes());
-    let hash = format!("{:x}", hasher.finalize());
+    let hash = hex_bytes(hasher.finalize());
     state_dir.join(format!("load-{hash}.log"))
 }

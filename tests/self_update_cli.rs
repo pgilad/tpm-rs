@@ -10,7 +10,7 @@ use tar::{Builder, EntryType};
 
 mod support;
 
-use support::{run_binary_with_env, set_executable, unique_temp_dir};
+use support::{hex_bytes, run_binary_with_env, set_executable, unique_temp_dir};
 
 #[test]
 fn self_update_replaces_the_running_binary_when_a_newer_release_exists() {
@@ -320,7 +320,7 @@ fn write_release_asset(releases_dir: &Path, target: &str, version: &str, body: &
     let archive_path = download_dir.join(&archive_name);
     fs::write(&archive_path, &archive_bytes).expect("archive should be writable");
 
-    let checksum = format!("{:x}", Sha256::digest(&archive_bytes));
+    let checksum = hex_bytes(Sha256::digest(&archive_bytes));
     fs::write(
         download_dir.join(format!("{archive_name}.sha256")),
         format!("{checksum}\n"),
